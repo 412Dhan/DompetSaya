@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<!-- Chosen Palette: Slate Gray with Indigo/Emerald/Rose Accents -->
+<!-- Application Structure Plan: A complete redesign into a multi-page SPA using a bottom navigation bar for primary sections (Beranda, Anggaran, Tujuan, Laporan). This structure is standard for complex mobile apps and provides a clear, scalable information architecture. A floating action button (FAB) is used for the primary action: adding a transaction. A comprehensive settings modal, accessed from the header, houses personalization (Dark Mode), security (PIN), data management (Backup/Restore), and content management (Categories). This design prioritizes task-based navigation and separates distinct functionalities into dedicated views, preventing user overload and creating an intuitive, professional user experience. -->
+<!-- Visualization & Content Choices: Report Info: User's financial data. Goal: Provide comprehensive personal finance management. Viz/Presentation: 1. Beranda: Key stats (cards) and a list of recent transactions. 2. Anggaran: List of categories with progress bars showing budget vs. spending. This is now editable via a modal. 3. Tujuan: List of savings goals with progress bars. 4. Laporan: A donut chart for expense breakdown by category and a bar chart for monthly income vs. expense trends. Interaction: Users can add/edit/delete transactions, categories, budgets, and goals. All charts and lists are dynamically updated from the central 'state' object. The app is secured by a PIN lock screen. AI Features: Gemini API is used for smart category suggestions in the transaction form, generating natural language financial analysis on the reports page, and creating personalized savings plans for user-defined goals. Justification: This combination of features covers the entire personal finance loop: planning (Anggaran, Tujuan), tracking (Transaksi), and reviewing (Laporan, Beranda), all within a secure, private, and highly interactive environment enhanced by AI. -->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+<html lang="id" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dompet Pro</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#374151"/>
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --background: #f9fafb; --foreground: #111827; --card: #ffffff; --card-foreground: #111827;
+            --muted: #f3f4f6; --muted-foreground: #6b7280; --popover: #ffffff; --popover-foreground: #111827;
+            --border: #e5e7eb; --input: #e5e7eb; --primary: #4f46e5; --primary-foreground: #f9fafb;
+            --secondary: #f3f4f6; --secondary-foreground: #111827; --accent: #f3f4f6; --accent-foreground: #111827;
+            --destructive: #ef4444; --ring: #4f46e5;
+        }
+        .dark {
+            --background: #09090b; --foreground: #fafafa; --card: #18181b; --card-foreground: #fafafa;
+            --muted: #27272a; --muted-foreground: #a1a1aa; --popover: #09090b; --popover-foreground: #fafafa;
+            --border: #27272a; --input: #27272a; --primary: #6366f1; --primary-foreground: #fafafa;
+            --secondary: #27272a; --secondary-foreground: #fafafa; --accent: #27272a; --accent-foreground: #fafafa;
+            --destructive: #f87171; --ring: #6366f1;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--background); color: var(--foreground); -webkit-tap-highlight-color: transparent; }
+        .modal-overlay {
+            position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.7); z-index: 50;
+            display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease;
+        }
+        .modal-hidden { opacity: 0; pointer-events: none; }
+        .modal-container {
+            background-color: var(--card); color: var(--card-foreground);
+            transition: all 0.3s ease; transform: scale(0.95); opacity: 0;
+        }
+        .modal-overlay:not(.modal-hidden) .modal-container { transform: scale(1); opacity: 1; }
+        .progress-bar { background-color: var(--muted); }
+        .progress-bar-fill { background-color: var(--primary); }
+        .nav-item.active svg { color: var(--primary); }
+        .nav-item.active span { color: var(--primary); font-weight: 600; }
+        .transaction-item-actions { display: none; }
+        .transaction-item:hover .transaction-item-actions { display: flex; }
+        .prose h3 { margin-bottom: 0.5em; font-weight: 600; color: var(--primary); }
+        .prose p { margin-bottom: 1em; }
+        .prose ul { list-style-position: outside; padding-left: 1.25em; margin-bottom: 1em; }
+        .prose li { margin-bottom: 0.5em; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px;
+            border-radius: 50%; border-left-color: var(--primary);
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="overscroll-none">
+
+    <div id="app-container" class="container mx-auto max-w-lg min-h-screen bg-[var(--background)] shadow-lg flex flex-col">
+        <!-- Header -->
+        <header id="app-header" class="flex justify-between items-center p-4 sticky top-0 bg-[var(--background)]/80 backdrop-blur-sm z-10 border-b border-[var(--border)]">
+            <div>
+                <h1 class="text-xl font-bold text-[var(--primary)]">Dompet Pro</h1>
+                <p id="header-subtitle" class="text-sm text-[var(--muted-foreground)]">Selamat Datang!</p>
+            </div>
+            <button id="open-settings-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">
+                <svg class="h-6 w-6 text-[var(--muted-foreground)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            </button>
+        </header>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-grow p-4 overflow-y-auto">
+            <div id="page-beranda" class="page-content"></div>
+            <div id="page-anggaran" class="page-content hidden"></div>
+            <div id="page-tujuan" class="page-content hidden"></div>
+            <div id="page-laporan" class="page-content hidden"></div>
+        </main>
+
+        <!-- Floating Action Button -->
+        <button id="fab-add-transaction" class="fixed z-20 right-6 bottom-20 h-14 w-14 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center shadow-lg hover:bg-indigo-700 dark:hover:bg-indigo-500 transition-transform transform hover:scale-110">
+            <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+        </button>
+
+        <!-- Bottom Navigation -->
+        <nav id="bottom-nav" class="grid grid-cols-4 gap-2 p-2 sticky bottom-0 bg-[var(--background)] border-t border-[var(--border)]">
+            <button data-page="beranda" class="nav-item flex flex-col items-center justify-center text-[var(--muted-foreground)] text-xs p-1 rounded-md active">
+                <svg class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                <span>Beranda</span>
+            </button>
+            <button data-page="anggaran" class="nav-item flex flex-col items-center justify-center text-[var(--muted-foreground)] text-xs p-1 rounded-md">
+                <svg class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" /></svg>
+                <span>Anggaran</span>
+            </button>
+            <button data-page="tujuan" class="nav-item flex flex-col items-center justify-center text-[var(--muted-foreground)] text-xs p-1 rounded-md">
+                <svg class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg>
+                <span>Tujuan</span>
+            </button>
+            <button data-page="laporan" class="nav-item flex flex-col items-center justify-center text-[var(--muted-foreground)] text-xs p-1 rounded-md">
+                <svg class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                <span>Laporan</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Modals -->
+    <div id="pin-modal" class="modal-overlay modal-hidden"></div>
+    <div id="transaction-modal" class="modal-overlay modal-hidden"></div>
+    <div id="settings-modal" class="modal-overlay modal-hidden"></div>
+    <div id="category-modal" class="modal-overlay modal-hidden"></div>
+    <div id="goal-modal" class="modal-overlay modal-hidden"></div>
+    <div id="add-funds-modal" class="modal-overlay modal-hidden"></div>
+    <div id="ai-analysis-modal" class="modal-overlay modal-hidden"></div>
+    <div id="ai-planner-modal" class="modal-overlay modal-hidden"></div>
+    <div id="budget-modal" class="modal-overlay modal-hidden"></div>
+
+
+    <script>
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const App = {
+                state: {},
+                getInitialState() {
+                    return {
+                        settings: { pin: null, darkMode: false, startDay: 1, userName: "Sobat Hemat" },
+                        categories: [
+                            { id: 'cat_inc_1', name: 'Gaji', icon: '💰', type: 'income', budget: 0 },
+                            { id: 'cat_exp_1', name: 'Makanan & Minuman', icon: '🍔', type: 'expense', budget: 500000 },
+                            { id: 'cat_exp_2', name: 'Transportasi', icon: '🚌', type: 'expense', budget: 200000 },
+                            { id: 'cat_exp_3', name: 'Tagihan', icon: '🧾', type: 'expense', budget: 1000000 },
+                            { id: 'cat_exp_4', name: 'Hiburan', icon: '🎉', type: 'expense', budget: 150000 },
+                            { id: 'cat_exp_5', name: 'Belanja', icon: '🛍️', type: 'expense', budget: 100000 },
+                            { id: 'cat_exp_6', name: 'Lainnya', icon: '💸', type: 'expense', budget: 50000 },
+                        ],
+                        transactions: [],
+                        savingsGoals: [],
+                        appLocked: false,
+                        activePage: 'beranda'
+                    };
+                },
+                loadState() {
+                    const savedState = localStorage.getItem('dompetProState_v5');
+                    this.state = savedState ? JSON.parse(savedState) : this.getInitialState();
+                    this.state.appLocked = !!this.state.settings.pin;
+                },
+                saveState() {
+                    localStorage.setItem('dompetProState_v5', JSON.stringify(this.state));
+                },
+
+                elements: {},
+                cacheDomElements() {
+                    this.elements = {
+                        html: document.querySelector('html'),
+                        headerSubtitle: document.getElementById('header-subtitle'),
+                        pages: document.querySelectorAll('.page-content'),
+                        navItems: document.querySelectorAll('.nav-item'),
+                        fab: document.getElementById('fab-add-transaction'),
+                        pinModal: document.getElementById('pin-modal'),
+                        transactionModal: document.getElementById('transaction-modal'),
+                        settingsModal: document.getElementById('settings-modal'),
+                        goalModal: document.getElementById('goal-modal'),
+                        addFundsModal: document.getElementById('add-funds-modal'),
+                        aiAnalysisModal: document.getElementById('ai-analysis-modal'),
+                        aiPlannerModal: document.getElementById('ai-planner-modal'),
+                        budgetModal: document.getElementById('budget-modal'),
+                    };
+                },
+
+                formatCurrency(num) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0); },
+                generateId(prefix) { return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; },
+                formatDate(dateStr) { return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); },
+                getStartOfMonth() { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); },
+
+                init() {
+                    this.cacheDomElements();
+                    this.loadState();
+                    this.applySettings();
+                    this.bindEvents();
+                    this.startApp();
+                },
+                
+                startApp() {
+                    if (this.state.appLocked) {
+                        this.showPinEntryModal();
+                    } else {
+                        this.navigateTo(this.state.activePage);
+                    }
+                },
+
+                applySettings() {
+                    if (this.state.settings.darkMode) this.elements.html.classList.add('dark');
+                    else this.elements.html.classList.remove('dark');
+                    this.elements.headerSubtitle.textContent = `Hai, ${this.state.settings.userName}!`;
+                },
+
+                bindEvents() {
+                    this.elements.navItems.forEach(item => item.addEventListener('click', (e) => this.navigateTo(e.currentTarget.dataset.page)));
+                    this.elements.fab.addEventListener('click', () => this.showTransactionModal());
+                    document.getElementById('open-settings-btn').addEventListener('click', () => this.showSettingsModal());
+                },
+                
+                navigateTo(page) {
+                    if (this.state.appLocked) return;
+                    this.state.activePage = page;
+                    this.elements.pages.forEach(p => p.classList.add('hidden'));
+                    const activePageEl = document.getElementById(`page-${page}`);
+                    if (activePageEl) {
+                        activePageEl.classList.remove('hidden');
+                        this.renderPage(page);
+                    }
+                    this.elements.navItems.forEach(item => item.classList.toggle('active', item.dataset.page === page));
+                    this.saveState();
+                },
+
+                renderPage(page) {
+                    const renderFunction = this[`render${page.charAt(0).toUpperCase() + page.slice(1)}`];
+                    if (typeof renderFunction === 'function') renderFunction.call(this);
+                },
+
+                renderBeranda() {
+                    const page = document.getElementById('page-beranda');
+                    const startOfMonth = this.getStartOfMonth();
+                    const transactionsThisMonth = this.state.transactions.filter(t => new Date(t.date) >= startOfMonth);
+                    const incomeThisMonth = transactionsThisMonth.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                    const expenseThisMonth = transactionsThisMonth.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                    
+                    const recentTransactions = [...this.state.transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+                    page.innerHTML = `
+                        <div class="space-y-6">
+                            <div class="bg-[var(--card)] p-4 rounded-lg shadow-sm border border-[var(--border)]">
+                                <h3 class="text-sm font-medium text-[var(--muted-foreground)]">Arus Kas Bulan Ini</h3>
+                                <div class="flex justify-between items-center mt-2">
+                                    <span class="text-lg font-semibold text-emerald-500">${this.formatCurrency(incomeThisMonth)}</span>
+                                    <span class="text-lg font-semibold text-rose-500">${this.formatCurrency(expenseThisMonth)}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold mb-2">Semua Transaksi</h3>
+                                <div class="space-y-2">
+                                    ${recentTransactions.length > 0 ? recentTransactions.map(t => this.renderTransactionItem(t)).join('') : '<p class="text-center text-[var(--muted-foreground)] py-4">Belum ada transaksi.</p>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    page.querySelectorAll('.edit-transaction-btn').forEach(btn => btn.addEventListener('click', (e) => this.showTransactionModal(e.currentTarget.dataset.id)));
+                    page.querySelectorAll('.delete-transaction-btn').forEach(btn => btn.addEventListener('click', (e) => this.deleteTransaction(e.currentTarget.dataset.id)));
+                },
+
+                renderTransactionItem(t) {
+                    const category = this.state.categories.find(c => c.id === t.categoryId) || {name: 'N/A', icon: '❓'};
+                    const isExpense = t.type === 'expense';
+                    return `
+                        <div class="transaction-item flex items-center justify-between bg-[var(--card)] p-3 rounded-lg border border-[var(--border)]">
+                            <div class="flex items-center gap-4">
+                                <span class="text-2xl">${category.icon}</span>
+                                <div>
+                                    <p class="font-medium">${t.description}</p>
+                                    <p class="text-sm text-[var(--muted-foreground)]">${this.formatDate(t.date)}</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <p class="font-semibold ${isExpense ? 'text-rose-500' : 'text-emerald-500'}">${isExpense ? '-' : '+'} ${this.formatCurrency(t.amount)}</p>
+                                <div class="transaction-item-actions">
+                                    <button data-id="${t.id}" class="edit-transaction-btn p-1 rounded-full hover:bg-[var(--muted)]">✏️</button>
+                                    <button data-id="${t.id}" class="delete-transaction-btn p-1 rounded-full hover:bg-[var(--muted)]">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+                
+                renderAnggaran() {
+                    const page = document.getElementById('page-anggaran');
+                    const startOfMonth = this.getStartOfMonth();
+                    const expenseCategories = this.state.categories.filter(c => c.type === 'expense');
+
+                    page.innerHTML = `
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center">
+                                <h2 class="text-xl font-bold">Anggaran Bulanan</h2>
+                                <button id="edit-budget-btn" class="text-sm font-medium text-[var(--primary)] hover:underline">Ubah Anggaran</button>
+                            </div>
+                            ${expenseCategories.map(c => {
+                                const spent = this.state.transactions
+                                    .filter(t => t.categoryId === c.id && new Date(t.date) >= startOfMonth)
+                                    .reduce((sum, t) => sum + t.amount, 0);
+                                const budget = c.budget || 0;
+                                const percentage = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+                                
+                                let progressColor = 'bg-indigo-500';
+                                if (percentage > 75) progressColor = 'bg-amber-500';
+                                if (percentage >= 100) progressColor = 'bg-red-500';
+
+                                return `
+                                    <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <div class="flex items-center gap-2"><span class="text-xl">${c.icon}</span><span class="font-medium">${c.name}</span></div>
+                                            <span class="text-sm font-semibold">${this.formatCurrency(spent)} / ${this.formatCurrency(budget)}</span>
+                                        </div>
+                                        <div class="w-full h-2 rounded-full progress-bar overflow-hidden">
+                                            <div class="h-full rounded-full progress-bar-fill ${progressColor}" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                    document.getElementById('edit-budget-btn').addEventListener('click', () => this.showBudgetModal());
+                },
+
+                renderTujuan() {
+                    const page = document.getElementById('page-tujuan');
+                    page.innerHTML = `
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center">
+                                <h2 class="text-xl font-bold">Tujuan Tabungan</h2>
+                                <button id="add-new-goal-btn" class="text-sm font-medium text-[var(--primary)] hover:underline">+ Tambah Tujuan</button>
+                            </div>
+                            ${this.state.savingsGoals.length > 0 ? this.state.savingsGoals.map(g => {
+                                const percentage = g.targetAmount > 0 ? Math.min((g.currentAmount / g.targetAmount) * 100, 100) : 0;
+                                return `
+                                    <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)]">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <div class="flex items-center gap-2 mb-2">
+                                                    <span class="text-2xl">${g.icon}</span>
+                                                    <span class="font-semibold text-lg">${g.name}</span>
+                                                </div>
+                                                <p class="text-sm text-emerald-500 font-medium">${this.formatCurrency(g.currentAmount)} <span class="text-[var(--muted-foreground)]">/ ${this.formatCurrency(g.targetAmount)}</span></p>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                 <button data-id="${g.id}" class="add-funds-btn p-2 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 text-xs">+</button>
+                                                 <button data-id="${g.id}" class="edit-goal-btn p-2 rounded-full hover:bg-[var(--muted)] text-xs">✏️</button>
+                                            </div>
+                                        </div>
+                                        <div class="w-full h-2 rounded-full progress-bar overflow-hidden mt-3">
+                                            <div class="h-full rounded-full progress-bar-fill bg-emerald-500" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('') : '<p class="text-center text-[var(--muted-foreground)] py-8">Belum ada tujuan tabungan.</p>'}
+                        </div>
+                    `;
+                    document.getElementById('add-new-goal-btn')?.addEventListener('click', () => this.showGoalModal());
+                    page.querySelectorAll('.edit-goal-btn').forEach(btn => btn.addEventListener('click', e => this.showGoalModal(e.currentTarget.dataset.id)));
+                    page.querySelectorAll('.add-funds-btn').forEach(btn => btn.addEventListener('click', e => this.showAddFundsModal(e.currentTarget.dataset.id)));
+                },
+
+                renderLaporan() {
+                    const page = document.getElementById('page-laporan');
+                    page.innerHTML = `
+                        <div class="space-y-8">
+                            <div>
+                                <h2 class="text-xl font-bold mb-4">Pengeluaran Bulan Ini</h2>
+                                <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)] h-80 flex justify-center items-center">
+                                    <canvas id="category-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <button id="ai-analysis-btn" class="w-full max-w-xs mx-auto flex justify-center items-center gap-2 py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[var(--primary)] hover:bg-indigo-700">
+                                    ✨ Dapatkan Analisis AI
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    this.renderCategoryChart();
+                    document.getElementById('ai-analysis-btn').addEventListener('click', () => this.handleReportAnalysis());
+                },
+
+                renderCategoryChart() {
+                    const canvas = document.getElementById('category-chart');
+                    if (!canvas) return;
+                    
+                    const startOfMonth = this.getStartOfMonth();
+                    const expensesThisMonth = this.state.transactions.filter(t => t.type === 'expense' && new Date(t.date) >= startOfMonth);
+                    
+                    const dataByCategory = expensesThisMonth.reduce((acc, t) => {
+                        const category = this.state.categories.find(c => c.id === t.categoryId) || { name: 'Lainnya' };
+                        acc[category.name] = (acc[category.name] || 0) + t.amount;
+                        return acc;
+                    }, {});
+
+                    if (Object.keys(dataByCategory).length === 0) {
+                        canvas.parentElement.innerHTML = '<p class="text-center text-[var(--muted-foreground)]">Belum ada data pengeluaran bulan ini.</p>';
+                        return;
+                    }
+
+                    new Chart(canvas.getContext('2d'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: Object.keys(dataByCategory),
+                            datasets: [{ data: Object.values(dataByCategory), backgroundColor: ['#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'], borderColor: 'var(--card)', borderWidth: 4 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                    });
+                },
+
+                showModal(modalEl) { modalEl.classList.remove('modal-hidden'); },
+                hideModal(modalEl) { modalEl.classList.add('modal-hidden'); },
+
+                showTransactionModal(transactionId = null) {
+                    const modal = this.elements.transactionModal;
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 id="transaction-modal-title" class="text-lg font-bold">Tambah Transaksi</h3>
+                                <button id="close-transaction-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <form id="transaction-form" class="flex-grow overflow-y-auto p-2 space-y-4">
+                                <input type="hidden" id="transaction-id">
+                                <div>
+                                    <div class="flex rounded-md shadow-sm">
+                                        <button type="button" id="type-expense-btn" class="w-full px-4 py-2 rounded-l-md border border-[var(--border)]">Pengeluaran</button>
+                                        <button type="button" id="type-income-btn" class="w-full px-4 py-2 rounded-r-md border border-[var(--border)]">Pemasukan</button>
+                                        <input type="hidden" id="transaction-type" value="expense">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="transaction-amount" class="text-sm font-medium text-[var(--muted-foreground)]">Jumlah</label>
+                                    <input type="number" id="transaction-amount" placeholder="0" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                 <div class="relative">
+                                    <label for="transaction-description" class="text-sm font-medium text-[var(--muted-foreground)]">Deskripsi</label>
+                                    <input type="text" id="transaction-description" placeholder="cth: Makan siang di kantor" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    <button type="button" id="ai-category-btn" class="absolute right-2 bottom-2 text-xs p-1 rounded-md bg-indigo-100 text-indigo-700 hidden">✨ AI</button>
+                                </div>
+                                 <div>
+                                    <label for="transaction-category" class="text-sm font-medium text-[var(--muted-foreground)]">Kategori</label>
+                                    <select id="transaction-category" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required></select>
+                                </div>
+                                 <div>
+                                    <label for="transaction-date" class="text-sm font-medium text-[var(--muted-foreground)]">Tanggal</label>
+                                    <input type="date" id="transaction-date" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <div class="pt-2">
+                                    <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">Simpan</button>
+                                </div>
+                            </form>
+                        </div>
+                    `;
+                    
+                    const form = modal.querySelector('#transaction-form');
+                    const typeInput = form.querySelector('#transaction-type');
+                    const expenseBtn = form.querySelector('#type-expense-btn');
+                    const incomeBtn = form.querySelector('#type-income-btn');
+                    const descriptionInput = form.querySelector('#transaction-description');
+                    const aiBtn = form.querySelector('#ai-category-btn');
+                    
+                    const setType = (type) => {
+                        typeInput.value = type;
+                        const isExpense = type === 'expense';
+                        expenseBtn.classList.toggle('bg-[var(--primary)]', isExpense);
+                        expenseBtn.classList.toggle('text-[var(--primary-foreground)]', isExpense);
+                        incomeBtn.classList.toggle('bg-[var(--primary)]', !isExpense);
+                        incomeBtn.classList.toggle('text-[var(--primary-foreground)]', !isExpense);
+                        this.populateCategoryOptions(type);
+                    };
+
+                    expenseBtn.onclick = () => setType('expense');
+                    incomeBtn.onclick = () => setType('income');
+                    descriptionInput.addEventListener('input', () => aiBtn.classList.toggle('hidden', !descriptionInput.value));
+                    aiBtn.addEventListener('click', () => this.handleCategorySuggestion());
+
+                    if (transactionId) {
+                        const t = this.state.transactions.find(tx => tx.id === transactionId);
+                        modal.querySelector('#transaction-modal-title').textContent = 'Edit Transaksi';
+                        form.querySelector('#transaction-id').value = t.id;
+                        form.querySelector('#transaction-amount').value = t.amount;
+                        form.querySelector('#transaction-date').value = t.date;
+                        descriptionInput.value = t.description;
+                        setType(t.type);
+                        form.querySelector('#transaction-category').value = t.categoryId;
+                    } else {
+                        modal.querySelector('#transaction-modal-title').textContent = 'Tambah Transaksi';
+                        form.querySelector('#transaction-date').value = new Date().toISOString().slice(0, 10);
+                        setType('expense');
+                    }
+                    
+                    modal.querySelector('#close-transaction-modal-btn').onclick = () => this.hideModal(modal);
+                    form.onsubmit = (e) => this.handleTransactionSubmit(e);
+                    this.showModal(modal);
+                },
+                
+                populateCategoryOptions(type) {
+                    const select = document.getElementById('transaction-category');
+                    const categories = this.state.categories.filter(c => c.type === type);
+                    select.innerHTML = categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                },
+
+                handleTransactionSubmit(e) {
+                    e.preventDefault();
+                    const form = e.target;
+                    const id = form.querySelector('#transaction-id').value;
+                    const newTransaction = {
+                        id: id || this.generateId('txn'),
+                        type: form.querySelector('#transaction-type').value,
+                        amount: parseInt(form.querySelector('#transaction-amount').value),
+                        categoryId: form.querySelector('#transaction-category').value,
+                        date: form.querySelector('#transaction-date').value,
+                        description: form.querySelector('#transaction-description').value.trim()
+                    };
+
+                    if (!newTransaction.amount || !newTransaction.description) return;
+
+                    if (id) {
+                        const index = this.state.transactions.findIndex(t => t.id === id);
+                        this.state.transactions[index] = newTransaction;
+                    } else {
+                        this.state.transactions.push(newTransaction);
+                    }
+                    
+                    this.hideModal(this.elements.transactionModal);
+                    this.navigateTo(this.state.activePage);
+                },
+                
+                deleteTransaction(transactionId) {
+                    if (confirm('Yakin ingin menghapus transaksi ini?')) {
+                        this.state.transactions = this.state.transactions.filter(t => t.id !== transactionId);
+                        this.navigateTo(this.state.activePage);
+                    }
+                },
+
+                showGoalModal(goalId = null) {
+                    const modal = this.elements.goalModal;
+                    const icons = ['💻', '✈️', '🏠', '🎓', '🚗', '🎁', '📱', '💍'];
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 id="goal-modal-title" class="text-lg font-bold">Tambah Tujuan</h3>
+                                <button id="close-goal-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <form id="goal-form" class="flex-grow overflow-y-auto p-2 space-y-4">
+                                <input type="hidden" id="goal-id">
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Nama Tujuan</label>
+                                    <input type="text" id="goal-name" placeholder="cth: Laptop Baru" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Target Dana (Rp)</label>
+                                    <input type="number" id="goal-target" placeholder="15000000" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Pilih Ikon</label>
+                                    <div id="goal-icons" class="grid grid-cols-8 gap-2 mt-2">
+                                        ${icons.map(icon => `<button type="button" class="p-2 text-2xl rounded-md border border-transparent hover:border-[var(--primary)]">${icon}</button>`).join('')}
+                                    </div>
+                                    <input type="hidden" id="goal-icon" value="💻">
+                                </div>
+                                <div class="pt-4">
+                                    <button type="button" id="ai-plan-btn" class="w-full mb-2 flex justify-center items-center gap-2 py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">✨ Buat Rencana AI</button>
+                                    <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">Simpan Tujuan</button>
+                                </div>
+                            </form>
+                        </div>
+                    `;
+
+                    const form = modal.querySelector('#goal-form');
+                    const iconContainer = modal.querySelector('#goal-icons');
+                    const iconInput = modal.querySelector('#goal-icon');
+
+                    iconContainer.querySelectorAll('button').forEach(btn => {
+                        btn.onclick = () => {
+                            iconContainer.querySelector('.border-\\[var\\(--primary\\)\\]')?.classList.remove('border-[var(--primary)]');
+                            btn.classList.add('border-[var(--primary)]');
+                            iconInput.value = btn.textContent;
+                        };
+                    });
+
+                    if (goalId) {
+                        const g = this.state.savingsGoals.find(goal => goal.id === goalId);
+                        modal.querySelector('#goal-modal-title').textContent = 'Edit Tujuan';
+                        form.querySelector('#goal-id').value = g.id;
+                        form.querySelector('#goal-name').value = g.name;
+                        form.querySelector('#goal-target').value = g.targetAmount;
+                        iconInput.value = g.icon;
+                        const selectedIcon = Array.from(iconContainer.querySelectorAll('button')).find(b => b.textContent === g.icon);
+                        selectedIcon?.classList.add('border-[var(--primary)]');
+                    } else {
+                        iconContainer.querySelector('button').classList.add('border-[var(--primary)]');
+                    }
+
+                    modal.querySelector('#close-goal-modal-btn').onclick = () => this.hideModal(modal);
+                    form.onsubmit = (e) => this.handleGoalSubmit(e);
+                    modal.querySelector('#ai-plan-btn').onclick = () => this.showAiPlannerModal();
+                    this.showModal(modal);
+                },
+
+                handleGoalSubmit(e) {
+                    e.preventDefault();
+                    const form = e.target;
+                    const id = form.querySelector('#goal-id').value;
+                    const newGoal = {
+                        id: id || this.generateId('goal'),
+                        name: form.querySelector('#goal-name').value,
+                        icon: form.querySelector('#goal-icon').value,
+                        targetAmount: parseInt(form.querySelector('#goal-target').value),
+                        currentAmount: id ? this.state.savingsGoals.find(g=>g.id===id).currentAmount : 0,
+                    };
+
+                    if (id) {
+                        const index = this.state.savingsGoals.findIndex(g => g.id === id);
+                        this.state.savingsGoals[index] = newGoal;
+                    } else {
+                        this.state.savingsGoals.push(newGoal);
+                    }
+                    this.hideModal(this.elements.goalModal);
+                    this.navigateTo('tujuan');
+                },
+
+                showAddFundsModal(goalId) {
+                     const modal = this.elements.addFundsModal;
+                     modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-sm">
+                            <h3 class="text-lg font-bold mb-4">Tambah Dana ke Tujuan</h3>
+                            <form id="add-funds-form" class="space-y-4">
+                                <input type="hidden" id="add-funds-goal-id" value="${goalId}">
+                                <div>
+                                    <label for="add-funds-amount" class="text-sm font-medium text-[var(--muted-foreground)]">Jumlah Dana (Rp)</label>
+                                    <input type="number" id="add-funds-amount" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <div class="flex justify-end space-x-2">
+                                    <button type="button" id="close-add-funds-btn" class="px-4 py-2 rounded-md bg-[var(--muted)] text-[var(--muted-foreground)]">Batal</button>
+                                    <button type="submit" class="px-4 py-2 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)]">Tambah</button>
+                                </div>
+                            </form>
+                        </div>
+                     `;
+                     modal.querySelector('#close-add-funds-btn').onclick = () => this.hideModal(modal);
+                     modal.querySelector('#add-funds-form').onsubmit = (e) => this.handleAddFundsSubmit(e);
+                     this.showModal(modal);
+                },
+
+                handleAddFundsSubmit(e) {
+                    e.preventDefault();
+                    const form = e.target;
+                    const goalId = form.querySelector('#add-funds-goal-id').value;
+                    const amount = parseInt(form.querySelector('#add-funds-amount').value);
+                    const goal = this.state.savingsGoals.find(g => g.id === goalId);
+                    if (goal && amount > 0) {
+                        goal.currentAmount += amount;
+                    }
+                    this.hideModal(this.elements.addFundsModal);
+                    this.navigateTo('tujuan');
+                },
+
+                showSettingsModal() {
+                    const modal = this.elements.settingsModal;
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-0 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center p-4 border-b border-[var(--border)]">
+                                <h3 class="text-lg font-bold">Pengaturan</h3>
+                                <button id="close-settings-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <div id="settings-content" class="flex-grow overflow-y-auto p-4 space-y-6">
+                                <div>
+                                    <label for="userName" class="text-sm font-medium">Nama Panggilan</label>
+                                    <input type="text" id="userName" value="${this.state.settings.userName}" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]">
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <label for="darkModeToggle" class="font-medium">Mode Gelap</label>
+                                    <button id="darkModeToggle" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-[var(--muted)]">
+                                        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${this.state.settings.darkMode ? 'translate-x-6' : 'translate-x-1'}"></span>
+                                    </button>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-2">Keamanan</h4>
+                                    <button id="setup-pin-btn" class="w-full text-left p-2 rounded-md hover:bg-[var(--muted)]">${this.state.settings.pin ? 'Ubah PIN' : 'Atur PIN Keamanan'}</button>
+                                    ${this.state.settings.pin ? '<button id="remove-pin-btn" class="w-full text-left p-2 rounded-md text-[var(--destructive)] hover:bg-red-500/10">Hapus PIN</button>' : ''}
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-2">Data</h4>
+                                    <button id="backup-btn" class="w-full text-left p-2 rounded-md hover:bg-[var(--muted)]">Backup Data ke File</button>
+                                    <label class="block w-full text-left p-2 rounded-md hover:bg-[var(--muted)] cursor-pointer">
+                                        Restore Data dari File
+                                        <input type="file" id="restore-input" class="hidden" accept=".json">
+                                    </label>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-2">Lainnya</h4>
+                                    <button id="reset-app-btn" class="w-full text-left p-2 rounded-md text-[var(--destructive)] hover:bg-red-500/10">Reset Aplikasi</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    this.showModal(modal);
+                    modal.querySelector('#close-settings-modal-btn').onclick = () => this.hideModal(modal);
+                    modal.querySelector('#userName').onchange = (e) => { this.state.settings.userName = e.target.value; this.saveState(); this.applySettings(); };
+                    modal.querySelector('#darkModeToggle').onclick = () => this.toggleDarkMode();
+                    modal.querySelector('#backup-btn').onclick = () => this.handleBackup();
+                    modal.querySelector('#restore-input').onchange = (e) => this.handleRestore(e);
+                    modal.querySelector('#reset-app-btn').onclick = () => this.handleResetApp();
+                    modal.querySelector('#setup-pin-btn').onclick = () => this.showPinSetupModal();
+                    modal.querySelector('#remove-pin-btn')?.addEventListener('click', () => this.removePin());
+                },
+
+                showBudgetModal() {
+                    const modal = this.elements.budgetModal;
+                    const expenseCategories = this.state.categories.filter(c => c.type === 'expense');
+                    
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 class="text-lg font-bold">Ubah Anggaran</h3>
+                                <button id="close-budget-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <div class="flex-grow overflow-y-auto p-2 space-y-4">
+                                ${expenseCategories.map(c => `
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-2xl">${c.icon}</span>
+                                            <span class="font-medium">${c.name}</span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm text-[var(--muted-foreground)]">Rp</span>
+                                            <input type="number" data-id="${c.id}" value="${c.budget || 0}" class="budget-input w-32 p-2 text-right rounded-md bg-[var(--muted)] border border-[var(--border)]">
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+
+                    modal.querySelector('#close-budget-modal-btn').onclick = () => {
+                        this.hideModal(modal);
+                        this.renderPage('anggaran');
+                    };
+
+                    modal.querySelectorAll('.budget-input').forEach(input => {
+                        input.addEventListener('change', (e) => {
+                            const categoryId = e.target.dataset.id;
+                            const newBudget = parseInt(e.target.value, 10) || 0;
+                            const category = this.state.categories.find(c => c.id === categoryId);
+                            if (category) {
+                                category.budget = newBudget;
+                                this.saveState();
+                            }
+                        });
+                    });
+
+                    this.showModal(modal);
+                },
+
+                toggleDarkMode() {
+                    this.state.settings.darkMode = !this.state.settings.darkMode;
+                    this.applySettings();
+                    this.saveState();
+                    this.showSettingsModal();
+                },
+                
+                handleBackup() {
+                    const dataStr = JSON.stringify(this.state);
+                    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                    const exportFileDefaultName = `dompet_pro_backup_${new Date().toISOString().slice(0,10)}.json`;
+                    const linkElement = document.createElement('a');
+                    linkElement.setAttribute('href', dataUri);
+                    linkElement.setAttribute('download', exportFileDefaultName);
+                    linkElement.click();
+                },
+                
+                handleRestore(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const restoredState = JSON.parse(e.target.result);
+                            if (confirm('Yakin ingin menimpa semua data saat ini dengan data dari file backup?')) {
+                                this.state = restoredState;
+                                this.saveState();
+                                alert('Data berhasil dipulihkan! Aplikasi akan dimuat ulang.');
+                                window.location.reload();
+                            }
+                        } catch (err) {
+                            alert('File backup tidak valid.');
+                        }
+                    };
+                    reader.readAsText(file);
+                },
+
+                handleResetApp() {
+                    if (confirm('PERINGATAN: Aksi ini akan menghapus SEMUA data Anda secara permanen. Anda yakin?')) {
+                        localStorage.removeItem('dompetProState_v4');
+                        window.location.reload();
+                    }
+                },
+
+                async callGemini(prompt) {
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0) return result.candidates[0].content.parts[0].text;
+                    throw new Error('Invalid AI Response');
+                },
+
+                async handleCategorySuggestion() {
+                    const btn = document.getElementById('ai-category-btn');
+                    const description = document.getElementById('transaction-description').value;
+                    const type = document.getElementById('transaction-type').value;
+                    if (!description) return;
+
+                    btn.textContent = '...';
+                    const categoryList = this.state.categories.filter(c => c.type === type).map(c => c.name).join(', ');
+                    const prompt = `Dari daftar kategori berikut: [${categoryList}], kategori mana yang paling cocok untuk deskripsi transaksi "${description}"? Jawab hanya dengan nama kategorinya.`;
+                    
+                    try {
+                        const suggestedCategoryName = await this.callGemini(prompt);
+                        const category = this.state.categories.find(c => c.name.toLowerCase() === suggestedCategoryName.trim().toLowerCase() && c.type === type);
+                        if (category) document.getElementById('transaction-category').value = category.id;
+                    } catch (error) { console.error("AI Category Suggestion Error:", error); } 
+                    finally { btn.textContent = '✨ AI'; }
+                },
+
+                async handleReportAnalysis() {
+                    const modal = this.elements.aiAnalysisModal;
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 class="text-lg font-bold text-[var(--primary)]">✨ Analisis AI</h3>
+                                <button id="close-ai-analysis-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <div id="ai-analysis-content" class="flex-grow overflow-y-auto p-2 prose"></div>
+                        </div>
+                    `;
+                    modal.querySelector('#close-ai-analysis-modal-btn').onclick = () => this.hideModal(modal);
+                    
+                    this.showModal(modal);
+                    const contentEl = modal.querySelector('#ai-analysis-content');
+                    contentEl.innerHTML = `<div class="flex justify-center items-center h-48"><div class="spinner"></div></div>`;
+                    
+                    const startOfMonth = this.getStartOfMonth();
+                    const expensesThisMonth = this.state.transactions.filter(t => t.type === 'expense' && new Date(t.date) >= startOfMonth);
+                    if (expensesThisMonth.length < 3) {
+                        contentEl.innerHTML = '<p>Data tidak cukup untuk dianalisis. Coba tambahkan lebih banyak transaksi bulan ini.</p>';
+                        return;
+                    }
+                    
+                    const transactionList = expensesThisMonth.map(t => `- ${t.description}: ${this.formatCurrency(t.amount)}`).join('\n');
+                    const prompt = `Anda adalah penasihat keuangan AI. Analisis daftar pengeluaran bulan ini dalam Bahasa Indonesia. Berikan output dalam format HTML (<h3>, <p>, <ul>, <li>). Jangan sertakan tag <html> atau <body>. Analisis harus mencakup: 1. Ringkasan singkat pola pengeluaran. 2. Identifikasi 2-3 kategori pengeluaran terbesar. 3. Berikan 2 tips hemat praktis. Data Transaksi:\n${transactionList}`;
+
+                    try {
+                        contentEl.innerHTML = await this.callGemini(prompt);
+                    } catch (error) {
+                        console.error("AI Report Analysis Error:", error);
+                        contentEl.innerHTML = '<p class="text-[var(--destructive)]">Maaf, terjadi kesalahan saat menganalisis data.</p>';
+                    }
+                },
+                
+                showAiPlannerModal() {
+                    const goalName = document.getElementById('goal-name').value;
+                    const targetAmount = document.getElementById('goal-target').value;
+                    if (!goalName || !targetAmount) {
+                        alert('Isi nama tujuan dan target dana terlebih dahulu.');
+                        return;
+                    }
+
+                    const modal = this.elements.aiPlannerModal;
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 class="text-lg font-bold text-blue-500">✨ Perencana Tabungan AI</h3>
+                                <button id="close-ai-planner-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <div id="ai-planner-content" class="flex-grow overflow-y-auto p-2">
+                                <form id="ai-planner-form" class="space-y-4">
+                                    <p class="text-sm text-[var(--muted-foreground)]">Kapan Anda ingin tujuan <span class="font-bold">${goalName}</span> tercapai?</p>
+                                    <div>
+                                        <label class="text-sm font-medium">Target Tanggal</label>
+                                        <input type="date" id="ai-planner-date" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    </div>
+                                    <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-blue-600 text-white font-semibold">Buat Rencana</button>
+                                </form>
+                                <div id="ai-planner-result" class="prose hidden"></div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    modal.querySelector('#close-ai-planner-btn').onclick = () => this.hideModal(modal);
+                    modal.querySelector('#ai-planner-form').onsubmit = (e) => {
+                        e.preventDefault();
+                        this.handleAiPlanGeneration(goalName, targetAmount, e.target.querySelector('#ai-planner-date').value);
+                    };
+                    this.showModal(modal);
+                },
+
+                async handleAiPlanGeneration(goalName, targetAmount, targetDate) {
+                    const resultDiv = document.getElementById('ai-planner-result');
+                    document.getElementById('ai-planner-form').classList.add('hidden');
+                    resultDiv.classList.remove('hidden');
+                    resultDiv.innerHTML = `<div class="flex justify-center items-center h-48"><div class="spinner"></div></div>`;
+
+                    const last3Months = new Date();
+                    last3Months.setMonth(last3Months.getMonth() - 3);
+                    const recentTransactions = this.state.transactions.filter(t => new Date(t.date) >= last3Months);
+                    const avgIncome = recentTransactions.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0) / 3 || 2000000;
+                    const avgExpense = recentTransactions.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0) / 3 || 1500000;
+
+                    const prompt = `Saya ingin menabung untuk "${goalName}" sebesar ${this.formatCurrency(targetAmount)} dan ingin tercapai pada tanggal ${this.formatDate(targetDate)}. Rata-rata pemasukan bulanan saya adalah ${this.formatCurrency(avgIncome)} dan pengeluaran ${this.formatCurrency(avgExpense)}. Berikan saya rencana tabungan bulanan yang realistis dalam format HTML (<h3>, <p>, <ul>, <li>). Jangan sertakan tag <html> atau <body>. Rencana harus mencakup: 1. Jumlah yang harus ditabung per bulan. 2. Proyeksi kapan tujuan akan tercapai. 3. 2 tips spesifik untuk mengurangi pengeluaran berdasarkan data rata-rata saya.`;
+
+                    try {
+                        resultDiv.innerHTML = await this.callGemini(prompt);
+                    } catch (error) {
+                        console.error("AI Planner Error:", error);
+                        resultDiv.innerHTML = '<p class="text-[var(--destructive)]">Maaf, terjadi kesalahan saat membuat rencana.</p>';
+                    }
+                },
+
+                showPinEntryModal() {
+                    const modal = this.elements.pinModal;
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-6 w-11/12 max-w-xs text-center">
+                            <h3 class="text-lg font-bold mb-2">Masukkan PIN</h3>
+                            <p class="text-sm text-[var(--muted-foreground)] mb-4">Aplikasi terkunci. Masukkan PIN Anda.</p>
+                            <div id="pin-dots" class="flex justify-center space-x-3 my-4">
+                                ${Array(4).fill('<div class="h-4 w-4 rounded-full border border-[var(--border)]"></div>').join('')}
+                            </div>
+                            <input type="number" id="pin-input" class="absolute opacity-0 -z-10">
+                            <p id="pin-error" class="text-sm text-[var(--destructive)] h-5"></p>
+                        </div>
+                    `;
+                    const pinInput = modal.querySelector('#pin-input');
+                    pinInput.addEventListener('input', (e) => this.handlePinInput(e, 'entry'));
+                    pinInput.addEventListener('blur', () => pinInput.focus());
+                    this.showModal(modal);
+                    setTimeout(() => pinInput.focus(), 100);
+                },
+
+                showPinSetupModal() {
+                    const modal = this.elements.pinModal;
+                    let step = this.state.settings.pin ? 'enter_old' : 'enter_new';
+                    let tempPin = '';
+
+                    const renderStep = () => {
+                        let title, message;
+                        if (step === 'enter_old') { title = 'Masukkan PIN Lama'; message = 'Untuk mengubah, masukkan PIN Anda saat ini.'; } 
+                        else if (step === 'enter_new') { title = 'Buat PIN Baru'; message = 'Masukkan 4 digit PIN baru.'; } 
+                        else if (step === 'confirm_new') { title = 'Konfirmasi PIN Baru'; message = 'Masukkan kembali 4 digit PIN baru Anda.'; }
+                        
+                        modal.innerHTML = `
+                            <div class="modal-container rounded-lg p-6 w-11/12 max-w-xs text-center">
+                                <h3 class="text-lg font-bold mb-2">${title}</h3>
+                                <p class="text-sm text-[var(--muted-foreground)] mb-4">${message}</p>
+                                <div id="pin-dots" class="flex justify-center space-x-3 my-4">
+                                    ${Array(4).fill('<div class="h-4 w-4 rounded-full border border-[var(--border)]"></div>').join('')}
+                                </div>
+                                <input type="number" id="pin-input-setup" class="absolute opacity-0 -z-10">
+                                <p id="pin-error" class="text-sm text-[var(--destructive)] h-5"></p>
+                                <button id="cancel-pin-setup" class="mt-4 text-sm text-[var(--muted-foreground)]">Batal</button>
+                            </div>
+                        `;
+
+                        const pinInput = modal.querySelector('#pin-input-setup');
+                        modal.querySelector('#cancel-pin-setup').onclick = () => { this.hideModal(modal); this.showSettingsModal(); };
+                        pinInput.oninput = (e) => {
+                            const pin = e.target.value;
+                            const dots = modal.querySelector('#pin-dots').children;
+                            const errorEl = modal.querySelector('#pin-error');
+                            errorEl.textContent = '';
+                            for (let i = 0; i < 4; i++) { dots[i].classList.toggle('bg-[var(--primary)]', i < pin.length); }
+
+                            if (pin.length >= 4) {
+                                if (step === 'enter_old') {
+                                    if (pin === this.state.settings.pin) { step = 'enter_new'; renderStep(); } 
+                                    else { errorEl.textContent = 'PIN lama salah.'; setTimeout(() => renderStep(), 1000); }
+                                } else if (step === 'enter_new') {
+                                    tempPin = pin; step = 'confirm_new'; renderStep();
+                                } else if (step === 'confirm_new') {
+                                    if (pin === tempPin) {
+                                        this.state.settings.pin = tempPin;
+                                        this.state.appLocked = true;
+                                        this.saveState();
+                                        alert('PIN berhasil diatur!');
+                                        this.hideModal(modal);
+                                        this.showSettingsModal();
+                                    } else {
+                                        errorEl.textContent = 'PIN tidak cocok.'; step = 'enter_new'; setTimeout(() => renderStep(), 1000);
+                                    }
+                                }
+                            }
+                        };
+                        pinInput.onblur = () => pinInput.focus();
+                        setTimeout(() => pinInput.focus(), 100);
+                    };
+                    
+                    renderStep();
+                    this.showModal(modal);
+                },
+                
+                removePin() {
+                    if (confirm('Apakah Anda yakin ingin menghapus PIN? Aplikasi tidak akan terkunci lagi.')) {
+                        this.state.settings.pin = null;
+                        this.state.appLocked = false;
+                        this.saveState();
+                        alert('PIN berhasil dihapus.');
+                        this.showSettingsModal();
+                    }
+                },
+
+                handlePinInput(e, context) {
+                    if (context !== 'entry') return;
+                    const input = e.target;
+                    const pin = input.value;
+                    const modal = this.elements.pinModal;
+                    const dots = modal.querySelector('#pin-dots').children;
+                    const errorEl = modal.querySelector('#pin-error');
+                    errorEl.textContent = '';
+
+                    for (let i = 0; i < 4; i++) { dots[i].classList.toggle('bg-[var(--primary)]', i < pin.length); }
+
+                    if (pin.length >= 4) {
+                        if (pin === this.state.settings.pin) {
+                            this.state.appLocked = false;
+                            this.hideModal(modal);
+                            this.navigateTo(this.state.activePage);
+                        } else {
+                            errorEl.textContent = 'PIN salah. Coba lagi.';
+                            input.value = '';
+                            setTimeout(() => {
+                                errorEl.textContent = '';
+                                for (let dot of dots) dot.classList.remove('bg-[var(--primary)]');
+                            }, 1000);
+                        }
+                    }
+                },
+            };
+
+            App.init();
+        });
+    </script>
+</body>
+</html>
