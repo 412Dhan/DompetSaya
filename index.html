@@ -1,8 +1,4 @@
 <!DOCTYPE html>
-<!-- Chosen Palette: Slate Gray with Indigo/Emerald/Rose Accents -->
-<!-- Application Structure Plan: A multi-page SPA using a bottom navigation bar for primary sections (Beranda, Anggaran, Tujuan, Laporan). This structure is standard for complex mobile apps and provides a clear, scalable information architecture. A floating action button (FAB) is used for the primary action: adding a transaction. A comprehensive settings modal, accessed from the header, houses personalization (Dark Mode), security (PIN), data management (Backup/Restore), and content management (Categories). This design prioritizes task-based navigation and separates distinct functionalities into dedicated views, preventing user overload and creating an intuitive, professional user experience. -->
-<!-- Visualization & Content Choices: Report Info: User's financial data. Goal: Provide comprehensive personal finance management. Viz/Presentation: 1. Beranda: Key stats (cards) and a list of recent transactions. The main card now shows Income, Expense, and Balance. 2. Anggaran: List of categories with progress bars showing budget vs. spending. 3. Tujuan: List of savings goals with progress bars. 4. Laporan: A donut chart for expense breakdown by category and a bar chart for monthly income vs. expense trends. Interaction: Users can add/edit/delete transactions, categories, budgets, and goals. All charts and lists are dynamically updated from the central 'state' object. The app is secured by a PIN lock screen. AI Features: Gemini API is used for smart category suggestions in the transaction form, generating natural language financial analysis on the reports page, and creating personalized savings plans for user-defined goals. Justification: This combination of features covers the entire personal finance loop: planning (Anggaran, Tujuan), tracking (Transaksi), and reviewing (Laporan, Beranda), all within a secure, private, and highly interactive environment enhanced by AI. -->
-<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
 <html lang="id" class="">
 <head>
     <meta charset="UTF-8">
@@ -42,6 +38,7 @@
         .modal-container {
             background-color: var(--card); color: var(--card-foreground);
             transition: all 0.3s ease; transform: scale(0.95); opacity: 0;
+            max-height: 90vh; display: flex; flex-direction: column;
         }
         .modal-overlay:not(.modal-hidden) .modal-container { transform: scale(1); opacity: 1; }
         .nav-item.active svg { color: var(--primary); }
@@ -61,7 +58,6 @@
 <body class="overscroll-none">
 
     <div id="app-container" class="container mx-auto max-w-lg min-h-screen bg-[var(--background)] shadow-lg flex flex-col">
-        <!-- Header -->
         <header id="app-header" class="flex justify-between items-center p-4 sticky top-0 bg-[var(--background)]/80 backdrop-blur-sm z-10 border-b border-[var(--border)]">
             <div>
                 <h1 class="text-xl font-bold text-[var(--primary)]">Dompet Pro</h1>
@@ -72,7 +68,6 @@
             </button>
         </header>
 
-        <!-- Main Content -->
         <main id="main-content" class="flex-grow p-4 overflow-y-auto pb-24">
             <div id="page-beranda" class="page-content"></div>
             <div id="page-anggaran" class="page-content hidden"></div>
@@ -80,12 +75,10 @@
             <div id="page-laporan" class="page-content hidden"></div>
         </main>
 
-        <!-- FAB -->
         <button id="fab-add-transaction" class="fixed z-20 right-6 bottom-20 h-14 w-14 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] flex items-center justify-center shadow-lg hover:bg-indigo-700 dark:hover:bg-indigo-500 transition-transform transform hover:scale-110">
             <svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
         </button>
 
-        <!-- Bottom Navigation -->
         <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 max-w-lg mx-auto grid grid-cols-4 gap-2 p-2 bg-[var(--background)] border-t border-[var(--border)]">
             <button data-page="beranda" class="nav-item flex flex-col items-center justify-center text-[var(--muted-foreground)] text-xs p-1 rounded-md active">
                 <svg class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
@@ -113,11 +106,9 @@
     <div id="goal-modal" class="modal-overlay modal-hidden"></div>
     <div id="add-funds-modal" class="modal-overlay modal-hidden"></div>
     <div id="ai-analysis-modal" class="modal-overlay modal-hidden"></div>
-    <div id="ai-planner-modal" class="modal-overlay modal-hidden"></div>
     <div id="budget-modal" class="modal-overlay modal-hidden"></div>
 
     <script>
-        // PWA Service Worker Registration
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW registration failed: ', err));
@@ -127,17 +118,18 @@
         document.addEventListener('DOMContentLoaded', () => {
             const App = {
                 state: {},
+                chartInstance: null, // Keep track of chart instance to prevent memory leaks during re-rendering
+                
                 getInitialState() {
                     return {
                         settings: { pin: null, darkMode: false, startDay: 1, userName: "Sobat Hemat" },
+                        // Data converted to monthly equivalent for accurate budget progress bars
                         categories: [
-                            { id: 'cat_inc_1', name: 'Gaji', icon: '💰', type: 'income', budget: 0 },
-                            { id: 'cat_exp_1', name: 'Makanan & Minuman', icon: '🍔', type: 'expense', budget: 500000 },
-                            { id: 'cat_exp_2', name: 'Transportasi', icon: '🚌', type: 'expense', budget: 200000 },
-                            { id: 'cat_exp_3', name: 'Tagihan', icon: '🧾', type: 'expense', budget: 1000000 },
-                            { id: 'cat_exp_4', name: 'Hiburan', icon: '🎉', type: 'expense', budget: 150000 },
-                            { id: 'cat_exp_5', name: 'Belanja', icon: '🛍️', type: 'expense', budget: 100000 },
-                            { id: 'cat_exp_6', name: 'Lainnya', icon: '💸', type: 'expense', budget: 50000 },
+                            { id: 'cat_inc_1', name: 'Uang Saku', icon: '💰', type: 'income', budget: 0 },
+                            { id: 'cat_exp_1', name: 'Bensin', icon: '⛽', type: 'expense', budget: 200000 }, 
+                            { id: 'cat_exp_2', name: 'Makan Kampus', icon: '🍱', type: 'expense', budget: 320000 }, 
+                            { id: 'cat_exp_3', name: 'Kuota Internet', icon: '🌐', type: 'expense', budget: 80000 },
+                            { id: 'cat_exp_4', name: 'Lainnya', icon: '💸', type: 'expense', budget: 50000 },
                         ],
                         transactions: [],
                         savingsGoals: [],
@@ -168,7 +160,6 @@
                         goalModal: document.getElementById('goal-modal'),
                         addFundsModal: document.getElementById('add-funds-modal'),
                         aiAnalysisModal: document.getElementById('ai-analysis-modal'),
-                        aiPlannerModal: document.getElementById('ai-planner-modal'),
                         budgetModal: document.getElementById('budget-modal'),
                     };
                 },
@@ -187,11 +178,8 @@
                 },
                 
                 startApp() {
-                    if (this.state.appLocked) {
-                        this.showPinEntryModal();
-                    } else {
-                        this.navigateTo(this.state.activePage);
-                    }
+                    if (this.state.appLocked) this.showPinEntryModal();
+                    else this.navigateTo(this.state.activePage);
                 },
 
                 applySettings() {
@@ -318,6 +306,28 @@
                     document.getElementById('edit-budget-btn').addEventListener('click', () => this.showBudgetModal());
                 },
 
+                renderGoalItem(g) {
+                    const percentage = g.targetAmount > 0 ? Math.min((g.currentAmount / g.targetAmount) * 100, 100) : 0;
+                    return `
+                        <div class="bg-[var(--card)] p-4 rounded-lg border border-[var(--border)] relative">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <h4 class="font-bold">${g.name}</h4>
+                                    <p class="text-sm text-[var(--muted-foreground)]">${this.formatCurrency(g.currentAmount)} / ${this.formatCurrency(g.targetAmount)}</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button data-id="${g.id}" class="add-funds-btn text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-medium hover:bg-emerald-200">+ Isi</button>
+                                    <button data-id="${g.id}" class="edit-goal-btn text-xs bg-[var(--muted)] text-[var(--muted-foreground)] px-2 py-1 rounded font-medium hover:bg-gray-200">Ubah</button>
+                                </div>
+                            </div>
+                            <div class="w-full h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                                <div class="h-full rounded-full bg-[var(--primary)]" style="width: ${percentage}%"></div>
+                            </div>
+                            ${percentage >= 100 ? '<p class="text-xs text-emerald-500 mt-2 font-semibold">Tujuan Tercapai! 🎉</p>' : ''}
+                        </div>
+                    `;
+                },
+
                 renderTujuan() {
                     const page = document.getElementById('page-tujuan');
                     page.innerHTML = `
@@ -359,6 +369,11 @@
                     const canvas = document.getElementById('category-chart');
                     if (!canvas) return;
                     
+                    // Destroy previous chart instance to prevent memory leaks and canvas rendering overlap
+                    if (this.chartInstance) {
+                        this.chartInstance.destroy();
+                    }
+                    
                     const startOfMonth = this.getStartOfMonth();
                     const expensesThisMonth = this.state.transactions.filter(t => t.type === 'expense' && new Date(t.date) >= startOfMonth);
                     
@@ -373,7 +388,7 @@
                         return;
                     }
 
-                    new Chart(canvas.getContext('2d'), {
+                    this.chartInstance = new Chart(canvas.getContext('2d'), {
                         type: 'doughnut',
                         data: {
                             labels: Object.keys(dataByCategory),
@@ -389,7 +404,7 @@
                 showTransactionModal() {
                     const modal = this.elements.transactionModal;
                     modal.innerHTML = `
-                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
                             <div class="flex justify-between items-center mb-4 p-2">
                                 <h3 class="text-lg font-bold">Tambah Transaksi</h3>
                                 <button id="close-transaction-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
@@ -408,7 +423,7 @@
                                 </div>
                                 <div class="relative">
                                     <label for="transaction-description" class="text-sm font-medium text-[var(--muted-foreground)]">Deskripsi</label>
-                                    <input type="text" id="transaction-description" placeholder="cth: Makan siang di kantor" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    <input type="text" id="transaction-description" placeholder="cth: Makan siang di kampus" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
                                 </div>
                                 <div>
                                     <label for="transaction-category" class="text-sm font-medium text-[var(--muted-foreground)]">Kategori</label>
@@ -472,6 +487,7 @@
                     if (!newTransaction.amount || !newTransaction.description) return;
 
                     this.state.transactions.push(newTransaction);
+                    this.saveState();
                     
                     this.hideModal(this.elements.transactionModal);
                     this.navigateTo(this.state.activePage);
@@ -482,7 +498,7 @@
                     const expenseCategories = this.state.categories.filter(c => c.type === 'expense');
                     
                     modal.innerHTML = `
-                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
                             <div class="flex justify-between items-center mb-4 p-2">
                                 <h3 class="text-lg font-bold">Ubah Anggaran</h3>
                                 <button id="close-budget-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
@@ -524,11 +540,111 @@
                     this.showModal(modal);
                 },
 
-                showGoalModal() {
-                   const modal = this.elements.goalModal;
-                   modal.innerHTML = `<div class="modal-container rounded-lg p-4 w-11/12 max-w-lg"><h3 class="text-lg font-bold">Tujuan Tabungan</h3><p class="text-sm mt-2 text-[var(--muted-foreground)]">Fitur ini sedang dalam pengembangan.</p><button id="close-goal-modal-btn" class="mt-4 px-4 py-2 bg-[var(--muted)] rounded-md">Tutup</button></div>`;
-                   modal.querySelector('#close-goal-modal-btn').onclick = () => this.hideModal(modal);
-                   this.showModal(modal);
+                showGoalModal(goalId = null) {
+                    const modal = this.elements.goalModal;
+                    const existingGoal = goalId ? this.state.savingsGoals.find(g => g.id === goalId) : null;
+                    
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
+                            <div class="flex justify-between items-center mb-4 p-2">
+                                <h3 class="text-lg font-bold">${existingGoal ? 'Ubah Tujuan' : 'Tambah Tujuan Baru'}</h3>
+                                <button id="close-goal-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <form id="goal-form" class="space-y-4 p-2">
+                                <input type="hidden" id="goal-id" value="${existingGoal ? existingGoal.id : ''}">
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Nama Tujuan</label>
+                                    <input type="text" id="goal-name" value="${existingGoal ? existingGoal.name : ''}" placeholder="cth: Beli Laptop Baru" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Target Tabungan (Rp)</label>
+                                    <input type="number" id="goal-target" value="${existingGoal ? existingGoal.targetAmount : ''}" placeholder="0" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                ${existingGoal ? `
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Terkumpul Saat Ini (Rp)</label>
+                                    <input type="number" id="goal-current" value="${existingGoal.currentAmount}" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                ` : ''}
+                                <div class="pt-2 flex gap-2">
+                                    <button type="submit" class="flex-1 px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">Simpan</button>
+                                    ${existingGoal ? `<button type="button" id="delete-goal-btn" class="px-4 py-2.5 rounded-md bg-[var(--destructive)] text-white font-semibold">Hapus</button>` : ''}
+                                </div>
+                            </form>
+                        </div>
+                    `;
+                    
+                    modal.querySelector('#close-goal-modal-btn').onclick = () => this.hideModal(modal);
+                    
+                    modal.querySelector('#goal-form').onsubmit = (e) => {
+                        e.preventDefault();
+                        const id = document.getElementById('goal-id').value;
+                        const name = document.getElementById('goal-name').value;
+                        const targetAmount = parseInt(document.getElementById('goal-target').value);
+                        const currentAmount = id ? parseInt(document.getElementById('goal-current').value) : 0;
+                        
+                        if (id) {
+                            const idx = this.state.savingsGoals.findIndex(g => g.id === id);
+                            if (idx !== -1) {
+                                this.state.savingsGoals[idx] = { ...this.state.savingsGoals[idx], name, targetAmount, currentAmount };
+                            }
+                        } else {
+                            this.state.savingsGoals.push({ id: this.generateId('goal'), name, targetAmount, currentAmount: 0 });
+                        }
+                        this.saveState();
+                        this.hideModal(modal);
+                        this.navigateTo('tujuan');
+                    };
+
+                    if (existingGoal) {
+                        modal.querySelector('#delete-goal-btn').onclick = () => {
+                            if (confirm('Hapus tujuan tabungan ini?')) {
+                                this.state.savingsGoals = this.state.savingsGoals.filter(g => g.id !== existingGoal.id);
+                                this.saveState();
+                                this.hideModal(modal);
+                                this.navigateTo('tujuan');
+                            }
+                        };
+                    }
+                    
+                    this.showModal(modal);
+                },
+
+                showAddFundsModal(goalId) {
+                    const modal = this.elements.addFundsModal;
+                    const goal = this.state.savingsGoals.find(g => g.id === goalId);
+                    if (!goal) return;
+
+                    modal.innerHTML = `
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-xs">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-bold">Isi Tabungan</h3>
+                                <button id="close-funds-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
+                            </div>
+                            <p class="text-sm text-[var(--muted-foreground)] mb-4">Tambah dana untuk: <strong>${goal.name}</strong></p>
+                            <form id="add-funds-form">
+                                <div>
+                                    <label class="text-sm font-medium text-[var(--muted-foreground)]">Jumlah (Rp)</label>
+                                    <input type="number" id="funds-amount" placeholder="0" class="w-full mt-1 mb-4 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                </div>
+                                <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-emerald-500 text-white font-semibold hover:bg-emerald-600">Tambah</button>
+                            </form>
+                        </div>
+                    `;
+
+                    modal.querySelector('#close-funds-modal-btn').onclick = () => this.hideModal(modal);
+                    
+                    modal.querySelector('#add-funds-form').onsubmit = (e) => {
+                        e.preventDefault();
+                        const amount = parseInt(document.getElementById('funds-amount').value);
+                        if (amount > 0) {
+                            goal.currentAmount += amount;
+                            this.saveState();
+                            this.hideModal(modal);
+                            this.navigateTo('tujuan');
+                        }
+                    };
+                    this.showModal(modal);
                 },
 
                 showSettingsModal() {
@@ -667,7 +783,7 @@
                         if (pin === this.state.settings.pin) {
                             this.state.appLocked = false;
                             this.hideModal(modal);
-                            this.renderMainPage();
+                            this.navigateTo(this.state.activePage);
                         } else {
                             errorEl.textContent = 'PIN salah. Coba lagi.';
                             input.value = '';
@@ -680,7 +796,9 @@
                 },
                 
                 async callGemini(prompt) {
-                    const apiKey = "";
+                    const apiKey = ""; 
+                    if (!apiKey) throw new Error("API Key belum diatur. Masukkan kunci API Anda di source code.");
+                    
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
                     const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
                     const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -693,7 +811,7 @@
                 async handleReportAnalysis() {
                     const modal = this.elements.aiAnalysisModal;
                     modal.innerHTML = `
-                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg max-h-[90vh] flex flex-col">
+                        <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
                             <div class="flex justify-between items-center mb-4 p-2">
                                 <h3 class="text-lg font-bold text-[var(--primary)]">✨ Analisis Mingguan</h3>
                                 <button id="close-ai-analysis-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
@@ -707,20 +825,22 @@
                     const contentEl = modal.querySelector('#ai-analysis-content');
                     contentEl.innerHTML = `<div class="flex justify-center items-center h-48"><div class="spinner"></div></div>`;
                     
-                    const expensesThisWeek = this.state.currentWeek.transactions.filter(t => t.type === 'expense');
-                    if (expensesThisWeek.length < 2) {
-                        contentEl.innerHTML = '<p>Data tidak cukup. Coba tambahkan lebih banyak transaksi minggu ini.</p>';
+                    // Fetching data for the current month analysis
+                    const startOfMonth = this.getStartOfMonth();
+                    const expensesThisMonth = this.state.transactions.filter(t => t.type === 'expense' && new Date(t.date) >= startOfMonth);
+                    
+                    if (expensesThisMonth.length < 2) {
+                        contentEl.innerHTML = '<p class="text-sm text-[var(--muted-foreground)]">Data tidak cukup. Coba tambahkan lebih banyak transaksi pengeluaran bulan ini.</p>';
                         return;
                     }
                     
-                    const transactionList = expensesThisWeek.map(t => `- ${t.description}: ${this.formatCurrency(t.amount)}`).join('\n');
-                    const prompt = `Anda adalah penasihat keuangan AI. Analisis daftar pengeluaran mingguan ini dalam Bahasa Indonesia. Berikan output dalam format HTML (<h3>, <p>, <ul>, <li>). Jangan sertakan tag <html> atau <body>. Analisis harus mencakup: 1. Ringkasan singkat pola pengeluaran. 2. Identifikasi 1-2 kategori pengeluaran terbesar. 3. Berikan 1 tips hemat praktis. Data Transaksi:\n${transactionList}`;
+                    const transactionList = expensesThisMonth.map(t => `- ${t.description}: ${this.formatCurrency(t.amount)}`).join('\n');
+                    const prompt = `Anda adalah penasihat keuangan AI. Analisis daftar pengeluaran ini dalam Bahasa Indonesia. Berikan output dalam format HTML (<h3>, <p>, <ul>, <li>). Jangan sertakan tag <html> atau <body>. Analisis harus mencakup: 1. Ringkasan singkat pola pengeluaran. 2. Identifikasi 1-2 kategori pengeluaran terbesar. 3. Berikan 1 tips hemat praktis.\nData Transaksi:\n${transactionList}`;
 
                     try {
                         contentEl.innerHTML = await this.callGemini(prompt);
                     } catch (error) {
-                        console.error("AI Report Analysis Error:", error);
-                        contentEl.innerHTML = '<p class="text-[var(--destructive)]">Maaf, terjadi kesalahan saat menganalisis data.</p>';
+                        contentEl.innerHTML = `<p class="text-[var(--destructive)] text-sm font-medium">Gagal memuat AI: ${error.message}</p>`;
                     }
                 },
 
