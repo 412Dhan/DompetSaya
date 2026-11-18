@@ -4,11 +4,7 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:5500'
 ];
 
-const CANDIDATE_MODELS = [
-    'gemini-3.8-flash',
-    'gemini-2.5-flash'
-];
-
+const PRIMARY_MODEL = 'gemini-3.8-flash';
 const RETRYABLE_STATUS_CODES = [429, 503];
 const RETRY_DELAY_MS = 1500;
 const REQUEST_TIMEOUT_MS = 15000;
@@ -24,9 +20,23 @@ function sleep(durationMs) {
 }
 
 /**
- * Sends a single content generation request to a specific Gemini model with timeout protection.
+ * Safely parses an HTTP response body as JSON without throwing on malformed payloads.
  *
- * @param {string} modelName - Target Gemini model identifier.
+ * @param {Response} httpResponse - Fetch API Response object.
+ * @returns {Promise<object>} Parsed JSON object or empty object on parse failure.
+ */
+async function parseJsonSafely(httpResponse) {
+    try {
+        return await httpResponse.json();
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Sends a content generation request to a specific Gemini model with timeout protection.
+ *
+ * @param {string} modelName - Target Gemini model identifier (without 'models/' prefix).
  * @param {string} promptText - Formatted financial analysis prompt.
  * @param {string} apiKey - Server-side Gemini API key.
  * @returns {Promise<{ok: boolean, status: number, text?: string, errorMessage?: string}>}
@@ -40,11 +50,11 @@ async function requestGeminiModel(modelName, promptText, apiKey) {
         body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: promptText }] }]
         }),
-        // Prevent Vercel serverless function from hanging indefinitely on stalled upstream connections
+        // Prevent Vercel serverless function from hanging on stalled upstream connections
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
 
-    const upstreamData = await upstreamResponse.json();
+    const upstreamData = await parseJsonSafely(upstreamResponse);
 
     if (!upstreamResponse.ok) {
         return {
@@ -67,39 +77,91 @@ async function requestGeminiModel(modelName, promptText, apiKey) {
 }
 
 /**
- * Executes model generation with automatic retry and fallback across candidate models
+ * Queries the Gemini API model registry to discover active text-generation models
+ * available for the current API key, avoiding hardcoded deprecated model IDs.
+ *
+ * @param {string} apiKey - Server-side Gemini API key.
+ * @returns {Promise<string[]>} Ordered list of fallback model identifiers.
+ */
+async function discoverFallbackModels(apiKey) {
+    const modelsEndpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+
+    try {
+        const listResponse = await fetch(modelsEndpoint, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000)
+        });
+
+        if (!listResponse.ok) return [];
+
+        const listData = await parseJsonSafely(listResponse);
+        const rawModels = Array.isArray(listData.models) ? listData.models : [];
+
+        // Filter out deprecated generations and non-text specialized endpoints
+        const excludedTokens = [
+            PRIMARY_MODEL, '1.5', '2.0', '2.5',
+            'embedding', 'imagen', 'veo', 'tts',
+            'audio', 'aqa', 'robotics', 'computer-use', 'deep-research'
+        ];
+
+        const validModels = rawModels
+            .filter((modelItem) => {
+                const methods = modelItem.supportedGenerationMethods || [];
+                const cleanName = (modelItem.name || '').replace('models/', '');
+                const isExcluded = excludedTokens.some((token) => cleanName.includes(token));
+                return methods.includes('generateContent') && !isExcluded;
+            })
+            .map((modelItem) => modelItem.name.replace('models/', ''));
+
+        // Prioritize lightweight or experimental flash variants first for faster response
+        return validModels.sort((modelA, modelB) => {
+            const scoreA = (modelA.includes('hydrogen') || modelA.includes('flash')) ? 0 : 1;
+            const scoreB = (modelB.includes('hydrogen') || modelB.includes('flash')) ? 0 : 1;
+            return scoreA - scoreB;
+        });
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Executes model generation with retry and dynamic fallback discovery
  * to mitigate temporary high-demand spikes (HTTP 503/429).
  *
  * @param {string} promptText - Formatted financial analysis prompt.
  * @param {string} apiKey - Server-side Gemini API key.
  * @returns {Promise<string>} Generated HTML analysis string.
- * @throws {Error} When all candidate models fail.
+ * @throws {Error} When primary and discovered fallback models all fail.
  */
 async function generateWithFallback(promptText, apiKey) {
-    let lastStatus = 500;
-    let lastErrorMessage = 'Gagal terhubung ke layanan AI.';
+    const primaryAttempt = await requestGeminiModel(PRIMARY_MODEL, promptText, apiKey);
+    if (primaryAttempt.ok) return primaryAttempt.text;
 
-    for (const modelName of CANDIDATE_MODELS) {
-        const firstAttempt = await requestGeminiModel(modelName, promptText, apiKey);
-        if (firstAttempt.ok) return firstAttempt.text;
+    let lastStatus = primaryAttempt.status;
+    let lastErrorMessage = primaryAttempt.errorMessage;
 
-        lastStatus = firstAttempt.status;
-        lastErrorMessage = firstAttempt.errorMessage;
+    if (RETRYABLE_STATUS_CODES.includes(primaryAttempt.status)) {
+        await sleep(RETRY_DELAY_MS);
+        const retryAttempt = await requestGeminiModel(PRIMARY_MODEL, promptText, apiKey);
+        if (retryAttempt.ok) return retryAttempt.text;
 
-        // Retry once on the same model only if the error is a transient load/rate spike
-        if (RETRYABLE_STATUS_CODES.includes(firstAttempt.status)) {
-            await sleep(RETRY_DELAY_MS);
-            const secondAttempt = await requestGeminiModel(modelName, promptText, apiKey);
-            if (secondAttempt.ok) return secondAttempt.text;
+        lastStatus = retryAttempt.status;
+        lastErrorMessage = retryAttempt.errorMessage;
+    }
 
-            lastStatus = secondAttempt.status;
-            lastErrorMessage = secondAttempt.errorMessage;
-        }
+    // Dynamically query active models on this API key when primary model is overloaded
+    const fallbackModels = await discoverFallbackModels(apiKey);
+    for (const candidateModel of fallbackModels) {
+        const fallbackAttempt = await requestGeminiModel(candidateModel, promptText, apiKey);
+        if (fallbackAttempt.ok) return fallbackAttempt.text;
+
+        lastStatus = fallbackAttempt.status;
+        lastErrorMessage = fallbackAttempt.errorMessage;
     }
 
     const finalError = new Error(
         RETRYABLE_STATUS_CODES.includes(lastStatus)
-            ? 'Server AI Google sedang mengalami lonjakan trafik sementara. Tunggu beberapa detik lalu coba lagi.'
+            ? 'Server AI Google sedang padat sementara. Tunggu beberapa detik lalu coba lagi.'
             : lastErrorMessage
     );
     finalError.statusCode = lastStatus;
