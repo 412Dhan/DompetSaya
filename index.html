@@ -169,6 +169,18 @@
                 formatDate(dateStr, options = { day: 'numeric', month: 'short' }) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', options); },
                 getStartOfMonth() { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); },
 
+                /**
+                 * Returns current local wall-clock time formatted as HH:MM.
+                 *
+                 * @returns {string} 24-hour time string (e.g., "14:35").
+                 */
+                getCurrentTime() {
+                    const now = new Date();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    return `${hours}:${minutes}`;
+                },
+
                 init() {
                     this.cacheDomElements();
                     this.loadState();
@@ -220,7 +232,12 @@
                     const expenseThisMonth = transactionsThisMonth.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
                     const balance = incomeThisMonth - expenseThisMonth;
                     
-                    const recentTransactions = [...this.state.transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+                    // Sort by combined ISO date and HH:MM timestamp so same-day entries order chronologically
+                    const recentTransactions = [...this.state.transactions].sort((txnA, txnB) => {
+                        const dateTimeA = new Date(`${txnA.date}T${txnA.time || '00:00'}`);
+                        const dateTimeB = new Date(`${txnB.date}T${txnB.time || '00:00'}`);
+                        return dateTimeB - dateTimeA;
+                    });
 
                     page.innerHTML = `
                         <div class="space-y-6">
@@ -248,20 +265,31 @@
                     `;
                 },
 
-                renderTransactionItem(t) {
-                    const category = this.state.categories.find(c => c.id === t.categoryId) || {name: 'N/A', icon: '❓'};
-                    const isExpense = t.type === 'expense';
+                /**
+                 * Renders a single transaction card with formatted date and realtime clock.
+                 *
+                 * @param {object} transaction - Transaction state record.
+                 * @returns {string} HTML markup for the transaction row.
+                 */
+                renderTransactionItem(transaction) {
+                    const category = this.state.categories.find(cat => cat.id === transaction.categoryId) || { name: 'N/A', icon: '❓' };
+                    const isExpense = transaction.type === 'expense';
+                    // Fallback gracefully for legacy transactions recorded before time tracking was added
+                    const formattedDateTime = transaction.time
+                        ? `${this.formatDate(transaction.date)} • ${transaction.time}`
+                        : this.formatDate(transaction.date);
+
                     return `
                         <div class="transaction-item flex items-center justify-between bg-[var(--card)] p-3 rounded-lg border border-[var(--border)]">
                             <div class="flex items-center gap-4">
                                 <span class="text-2xl">${category.icon}</span>
                                 <div>
-                                    <p class="font-medium">${t.description}</p>
-                                    <p class="text-sm text-[var(--muted-foreground)]">${this.formatDate(t.date)}</p>
+                                    <p class="font-medium">${transaction.description}</p>
+                                    <p class="text-sm text-[var(--muted-foreground)]">${formattedDateTime}</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
-                                <p class="font-semibold ${isExpense ? 'text-rose-500' : 'text-emerald-500'}">${isExpense ? '-' : '+'} ${this.formatCurrency(t.amount)}</p>
+                                <p class="font-semibold ${isExpense ? 'text-rose-500' : 'text-emerald-500'}">${isExpense ? '-' : '+'} ${this.formatCurrency(transaction.amount)}</p>
                             </div>
                         </div>
                     `;
@@ -429,9 +457,15 @@
                                     <label for="transaction-category" class="text-sm font-medium text-[var(--muted-foreground)]">Kategori</label>
                                     <select id="transaction-category" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required></select>
                                 </div>
-                                <div>
-                                    <label for="transaction-date" class="text-sm font-medium text-[var(--muted-foreground)]">Tanggal</label>
-                                    <input type="date" id="transaction-date" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label for="transaction-date" class="text-sm font-medium text-[var(--muted-foreground)]">Tanggal</label>
+                                        <input type="date" id="transaction-date" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    </div>
+                                    <div>
+                                        <label for="transaction-time" class="text-sm font-medium text-[var(--muted-foreground)]">Jam</label>
+                                        <input type="time" id="transaction-time" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    </div>
                                 </div>
                                 <div class="pt-2">
                                     <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">Simpan</button>
@@ -458,7 +492,9 @@
                     expenseBtn.onclick = () => setType('expense');
                     incomeBtn.onclick = () => setType('income');
                     
-                    modal.querySelector('#transaction-date').value = new Date().toISOString().slice(0, 10);
+                    // Use local timezone date (en-CA -> YYYY-MM-DD) instead of UTC to prevent midnight date shifts
+                    modal.querySelector('#transaction-date').value = new Date().toLocaleDateString('en-CA');
+                    modal.querySelector('#transaction-time').value = this.getCurrentTime();
                     setType('expense');
                     
                     modal.querySelector('#close-transaction-modal-btn').onclick = () => this.hideModal(modal);
@@ -472,15 +508,24 @@
                     select.innerHTML = categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
                 },
 
-                handleTransactionSubmit(e) {
-                    e.preventDefault();
-                    const form = e.target;
+                /**
+                 * Validates and persists a new transaction with realtime date and clock metadata.
+                 *
+                 * @param {SubmitEvent} submitEvent - Form submission event.
+                 */
+                handleTransactionSubmit(submitEvent) {
+                    submitEvent.preventDefault();
+                    const form = submitEvent.target;
+                    const timeInput = form.querySelector('#transaction-time');
+                    const recordedTime = (timeInput && timeInput.value) ? timeInput.value : this.getCurrentTime();
+
                     const newTransaction = {
                         id: this.generateId('txn'),
                         type: form.querySelector('#transaction-type').value,
-                        amount: parseInt(form.querySelector('#transaction-amount').value),
+                        amount: parseInt(form.querySelector('#transaction-amount').value, 10),
                         categoryId: form.querySelector('#transaction-category').value,
                         date: form.querySelector('#transaction-date').value,
+                        time: recordedTime,
                         description: form.querySelector('#transaction-description').value.trim()
                     };
 
@@ -850,8 +895,16 @@
                         return;
                     }
                     
-                    const transactionList = expensesThisMonth.map(t => `- ${t.description}: ${this.formatCurrency(t.amount)}`).join('\n');
-                    const prompt = `Anda adalah penasihat keuangan AI. Analisis daftar pengeluaran ini dalam Bahasa Indonesia. Berikan output dalam format HTML (<h3>, <p>, <ul>, <li>). Jangan sertakan tag <html> atau <body>. Analisis harus mencakup: 1. Ringkasan singkat pola pengeluaran. 2. Identifikasi 1-2 kategori pengeluaran terbesar. 3. Berikan 1 tips hemat praktis.\nData Transaksi:\n${transactionList}`;
+                    // Include date, timestamp, and category so AI distinguishes separate purchase occasions
+                    const transactionList = expensesThisMonth.map((txn) => {
+                        const category = this.state.categories.find(cat => cat.id === txn.categoryId) || { name: 'Lainnya' };
+                        const timestampLabel = txn.time
+                            ? `${this.formatDate(txn.date)} pukul ${txn.time}`
+                            : this.formatDate(txn.date);
+                        return `- [${timestampLabel}] ${txn.description} (${category.name}): ${this.formatCurrency(txn.amount)}`;
+                    }).join('\n');
+
+                    const prompt = `Anda adalah penasihat keuangan AI. Analisis daftar pengeluaran berikut dalam Bahasa Indonesia. Perhatikan tanggal dan jam setiap transaksi agar tidak menganggap transaksi di hari atau waktu berbeda sebagai satu kali pembelian yang sama. Berikan output dalam format HTML (<h3>, <p>, <ul>, <li>) tanpa tag <html> atau <body>. Analisis mencakup: 1. Ringkasan singkat pola pengeluaran berdasarkan waktu/aktivitas. 2. Identifikasi 1-2 kategori pengeluaran terbesar. 3. Berikan 1 tips hemat praktis yang realistis.\nData Transaksi:\n${transactionList}`;
 
                     try {
                         contentEl.innerHTML = await this.callGemini(prompt);
