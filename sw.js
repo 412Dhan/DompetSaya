@@ -1,29 +1,31 @@
-const CACHE_NAME = 'dompet-pro-cache-v1';
+const CACHE_NAME = 'dompet-pro-cache-v2';
+
+// Use relative paths so caching works accurately under GitHub Pages subpaths (/DompetSaya/)
 const urlsToCache = [
-  '/',
-  '/index.html',
+  './',
+  './index.html',
+  './manifest.json',
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
 ];
 
 self.addEventListener('install', event => {
+  // Force the waiting service worker to become the active service worker immediately
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        return cache.addAll(urlsToCache);
-      })
+      .then(cache => cache.addAll(urlsToCache))
   );
 });
 
 self.addEventListener('fetch', event => {
+  // Bypass cache for non-GET requests (such as POST calls to the Vercel AI proxy)
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
     caches.match(event.request)
-      .then(response => {
-        // Return cached version if found, otherwise fetch from network
-        return response || fetch(event.request);
-      }
-    )
+      .then(response => response || fetch(event.request))
   );
 });
 
@@ -33,12 +35,11 @@ self.addEventListener('activate', event => {
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cacheName => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            // Clear old cache versions to prevent stale assets
+          if (!cacheWhitelist.includes(cacheName)) {
             return caches.delete(cacheName);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
