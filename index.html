@@ -118,12 +118,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             const App = {
                 state: {},
-                chartInstance: null, // Keep track of chart instance to prevent memory leaks during re-rendering
+                chartInstance: null,
                 
                 getInitialState() {
                     return {
                         settings: { pin: null, darkMode: false, startDay: 1, userName: "Sobat Hemat" },
-                        // Data converted to monthly equivalent for accurate budget progress bars
+                        // Weekly allowance expenses scaled to monthly equivalents (x4) to match getStartOfMonth()
                         categories: [
                             { id: 'cat_inc_1', name: 'Uang Saku', icon: '💰', type: 'income', budget: 0 },
                             { id: 'cat_exp_1', name: 'Bensin', icon: '⛽', type: 'expense', budget: 200000 }, 
@@ -369,7 +369,7 @@
                     const canvas = document.getElementById('category-chart');
                     if (!canvas) return;
                     
-                    // Destroy previous chart instance to prevent memory leaks and canvas rendering overlap
+                    // Destroy previous chart instance to prevent memory leaks and canvas overlap
                     if (this.chartInstance) {
                         this.chartInstance.destroy();
                     }
@@ -794,18 +794,35 @@
                         }
                     }
                 },
-                
+
+                /**
+                 * Sends monthly expense data to the Vercel serverless proxy for AI analysis.
+                 *
+                 * @param {string} prompt - Formatted financial analysis prompt.
+                 * @returns {Promise<string>} HTML-formatted financial insights.
+                 * @throws {Error} When network request fails or proxy returns an error status.
+                 */
                 async callGemini(prompt) {
-                    const apiKey = ""; 
-                    if (!apiKey) throw new Error("API Key belum diatur. Masukkan kunci API Anda di source code.");
-                    
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
-                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-                    const result = await response.json();
-                    if (result.candidates && result.candidates.length > 0) return result.candidates[0].content.parts[0].text;
-                    throw new Error('Invalid AI Response');
+                    const proxyEndpoint = 'https://dompetsaya-api.vercel.app/api/gemini';
+
+                    const response = await fetch(proxyEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt })
+                    });
+
+                    let responseData;
+                    try {
+                        responseData = await response.json();
+                    } catch {
+                        throw new Error(`Respons server tidak valid (HTTP ${response.status})`);
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(responseData.error || `Server Error: ${response.status}`);
+                    }
+
+                    return responseData.result;
                 },
                 
                 async handleReportAnalysis() {
@@ -813,7 +830,7 @@
                     modal.innerHTML = `
                         <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
                             <div class="flex justify-between items-center mb-4 p-2">
-                                <h3 class="text-lg font-bold text-[var(--primary)]">✨ Analisis Mingguan</h3>
+                                <h3 class="text-lg font-bold text-[var(--primary)]">✨ Analisis Keuangan</h3>
                                 <button id="close-ai-analysis-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
                             </div>
                             <div id="ai-analysis-content" class="flex-grow overflow-y-auto p-2 prose"></div>
@@ -825,7 +842,6 @@
                     const contentEl = modal.querySelector('#ai-analysis-content');
                     contentEl.innerHTML = `<div class="flex justify-center items-center h-48"><div class="spinner"></div></div>`;
                     
-                    // Fetching data for the current month analysis
                     const startOfMonth = this.getStartOfMonth();
                     const expensesThisMonth = this.state.transactions.filter(t => t.type === 'expense' && new Date(t.date) >= startOfMonth);
                     
