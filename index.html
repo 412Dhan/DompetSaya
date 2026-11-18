@@ -123,7 +123,6 @@
                 getInitialState() {
                     return {
                         settings: { pin: null, darkMode: false, startDay: 1, userName: "Sobat Hemat" },
-                        // Weekly allowance expenses scaled to monthly equivalents (x4) to match getStartOfMonth()
                         categories: [
                             { id: 'cat_inc_1', name: 'Uang Saku', icon: '💰', type: 'income', budget: 0 },
                             { id: 'cat_exp_1', name: 'Bensin', icon: '⛽', type: 'expense', budget: 200000 }, 
@@ -169,11 +168,6 @@
                 formatDate(dateStr, options = { day: 'numeric', month: 'short' }) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', options); },
                 getStartOfMonth() { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); },
 
-                /**
-                 * Returns current local wall-clock time formatted as HH:MM.
-                 *
-                 * @returns {string} 24-hour time string (e.g., "14:35").
-                 */
                 getCurrentTime() {
                     const now = new Date();
                     const hours = String(now.getHours()).padStart(2, '0');
@@ -232,7 +226,6 @@
                     const expenseThisMonth = transactionsThisMonth.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
                     const balance = incomeThisMonth - expenseThisMonth;
                     
-                    // Sort by combined ISO date and HH:MM timestamp so same-day entries order chronologically
                     const recentTransactions = [...this.state.transactions].sort((txnA, txnB) => {
                         const dateTimeA = new Date(`${txnA.date}T${txnA.time || '00:00'}`);
                         const dateTimeB = new Date(`${txnB.date}T${txnB.time || '00:00'}`);
@@ -257,8 +250,50 @@
                             </div>
                             <div>
                                 <h3 class="text-lg font-semibold mb-2">Semua Transaksi</h3>
-                                <div class="space-y-2">
+                                <div id="transaction-list-container" class="space-y-2">
                                     ${recentTransactions.length > 0 ? recentTransactions.map(t => this.renderTransactionItem(t)).join('') : '<p class="text-center text-[var(--muted-foreground)] py-4">Belum ada transaksi.</p>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Bind Edit and Delete button events for each transaction row
+                    page.querySelectorAll('.edit-txn-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const txnId = e.currentTarget.dataset.id;
+                            this.showTransactionModal(txnId);
+                        });
+                    });
+
+                    page.querySelectorAll('.delete-txn-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const txnId = e.currentTarget.dataset.id;
+                            this.deleteTransaction(txnId);
+                        });
+                    });
+                },
+
+                renderTransactionItem(transaction) {
+                    const category = this.state.categories.find(cat => cat.id === transaction.categoryId) || { name: 'N/A', icon: '❓' };
+                    const isExpense = transaction.type === 'expense';
+                    const formattedDateTime = transaction.time
+                        ? `${this.formatDate(transaction.date)} • ${transaction.time}`
+                        : this.formatDate(transaction.date);
+
+                    return `
+                        <div class="transaction-item flex items-center justify-between bg-[var(--card)] p-3 rounded-lg border border-[var(--border)] gap-2">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <span class="text-2xl flex-shrink-0">${category.icon}</span>
+                                <div class="min-w-0">
+                                    <p class="font-medium truncate">${transaction.description}</p>
+                                    <p class="text-xs text-[var(--muted-foreground)]">${formattedDateTime}</p>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end flex-shrink-0 gap-1.5">
+                                <p class="font-semibold text-sm ${isExpense ? 'text-rose-500' : 'text-emerald-500'}">${isExpense ? '-' : '+'} ${this.formatCurrency(transaction.amount)}</p>
+                                <div class="flex items-center gap-1.5">
+                                    <button type="button" data-id="${transaction.id}" class="edit-txn-btn text-[11px] px-2 py-0.5 rounded bg-[var(--muted)] text-[var(--foreground)] hover:opacity-80 font-medium">Ubah</button>
+                                    <button type="button" data-id="${transaction.id}" class="delete-txn-btn text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 font-medium">Hapus</button>
                                 </div>
                             </div>
                         </div>
@@ -266,33 +301,19 @@
                 },
 
                 /**
-                 * Renders a single transaction card with formatted date and realtime clock.
+                 * Removes a transaction record after confirmation and refreshes the current view.
                  *
-                 * @param {object} transaction - Transaction state record.
-                 * @returns {string} HTML markup for the transaction row.
+                 * @param {string} transactionId - Target transaction ID to delete.
                  */
-                renderTransactionItem(transaction) {
-                    const category = this.state.categories.find(cat => cat.id === transaction.categoryId) || { name: 'N/A', icon: '❓' };
-                    const isExpense = transaction.type === 'expense';
-                    // Fallback gracefully for legacy transactions recorded before time tracking was added
-                    const formattedDateTime = transaction.time
-                        ? `${this.formatDate(transaction.date)} • ${transaction.time}`
-                        : this.formatDate(transaction.date);
+                deleteTransaction(transactionId) {
+                    const targetTxn = this.state.transactions.find(txn => txn.id === transactionId);
+                    if (!targetTxn) return;
 
-                    return `
-                        <div class="transaction-item flex items-center justify-between bg-[var(--card)] p-3 rounded-lg border border-[var(--border)]">
-                            <div class="flex items-center gap-4">
-                                <span class="text-2xl">${category.icon}</span>
-                                <div>
-                                    <p class="font-medium">${transaction.description}</p>
-                                    <p class="text-sm text-[var(--muted-foreground)]">${formattedDateTime}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <p class="font-semibold ${isExpense ? 'text-rose-500' : 'text-emerald-500'}">${isExpense ? '-' : '+'} ${this.formatCurrency(transaction.amount)}</p>
-                            </div>
-                        </div>
-                    `;
+                    if (confirm(`Hapus transaksi "${targetTxn.description}" (${this.formatCurrency(targetTxn.amount)})?`)) {
+                        this.state.transactions = this.state.transactions.filter(txn => txn.id !== transactionId);
+                        this.saveState();
+                        this.navigateTo(this.state.activePage);
+                    }
                 },
                 
                 renderAnggaran() {
@@ -397,7 +418,6 @@
                     const canvas = document.getElementById('category-chart');
                     if (!canvas) return;
                     
-                    // Destroy previous chart instance to prevent memory leaks and canvas overlap
                     if (this.chartInstance) {
                         this.chartInstance.destroy();
                     }
@@ -429,29 +449,40 @@
                 showModal(modalEl) { modalEl.classList.remove('modal-hidden'); },
                 hideModal(modalEl) { modalEl.classList.add('modal-hidden'); },
 
-                showTransactionModal() {
+                /**
+                 * Opens the transaction modal in either Create mode (transactionId = null)
+                 * or Edit mode (pre-populated with existing transaction data).
+                 *
+                 * @param {string|null} transactionId - Optional ID of the transaction to edit.
+                 */
+                showTransactionModal(transactionId = null) {
                     const modal = this.elements.transactionModal;
+                    const existingTxn = transactionId
+                        ? this.state.transactions.find(txn => txn.id === transactionId)
+                        : null;
+
                     modal.innerHTML = `
                         <div class="modal-container rounded-lg p-4 w-11/12 max-w-lg">
                             <div class="flex justify-between items-center mb-4 p-2">
-                                <h3 class="text-lg font-bold">Tambah Transaksi</h3>
+                                <h3 class="text-lg font-bold">${existingTxn ? 'Ubah Transaksi' : 'Tambah Transaksi'}</h3>
                                 <button id="close-transaction-modal-btn" class="p-2 rounded-full hover:bg-[var(--muted)]">&times;</button>
                             </div>
                             <form id="transaction-form" class="flex-grow overflow-y-auto p-2 space-y-4">
+                                <input type="hidden" id="transaction-id" value="${existingTxn ? existingTxn.id : ''}">
                                 <div>
                                     <div class="flex rounded-md shadow-sm">
                                         <button type="button" id="type-expense-btn" class="w-full px-4 py-2 rounded-l-md border border-[var(--border)]">Pengeluaran</button>
                                         <button type="button" id="type-income-btn" class="w-full px-4 py-2 rounded-r-md border border-[var(--border)]">Pemasukan</button>
-                                        <input type="hidden" id="transaction-type" value="expense">
+                                        <input type="hidden" id="transaction-type" value="${existingTxn ? existingTxn.type : 'expense'}">
                                     </div>
                                 </div>
                                 <div>
                                     <label for="transaction-amount" class="text-sm font-medium text-[var(--muted-foreground)]">Jumlah</label>
-                                    <input type="number" id="transaction-amount" placeholder="0" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    <input type="number" id="transaction-amount" value="${existingTxn ? existingTxn.amount : ''}" placeholder="0" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
                                 </div>
                                 <div class="relative">
                                     <label for="transaction-description" class="text-sm font-medium text-[var(--muted-foreground)]">Deskripsi</label>
-                                    <input type="text" id="transaction-description" placeholder="cth: Makan siang di kampus" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
+                                    <input type="text" id="transaction-description" value="${existingTxn ? existingTxn.description : ''}" placeholder="cth: Makan siang di kampus" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
                                 </div>
                                 <div>
                                     <label for="transaction-category" class="text-sm font-medium text-[var(--muted-foreground)]">Kategori</label>
@@ -467,8 +498,9 @@
                                         <input type="time" id="transaction-time" class="w-full mt-1 p-2 rounded-md bg-[var(--muted)] border border-[var(--border)]" required>
                                     </div>
                                 </div>
-                                <div class="pt-2">
-                                    <button type="submit" class="w-full px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">Simpan</button>
+                                <div class="pt-2 flex gap-2">
+                                    <button type="submit" class="flex-1 px-4 py-2.5 rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold">${existingTxn ? 'Simpan Perubahan' : 'Simpan'}</button>
+                                    ${existingTxn ? `<button type="button" id="modal-delete-txn-btn" class="px-4 py-2.5 rounded-md bg-[var(--destructive)] text-white font-semibold">Hapus</button>` : ''}
                                 </div>
                             </form>
                         </div>
@@ -479,48 +511,66 @@
                     const expenseBtn = form.querySelector('#type-expense-btn');
                     const incomeBtn = form.querySelector('#type-income-btn');
                     
-                    const setType = (type) => {
+                    const setType = (type, selectedCategoryId = null) => {
                         typeInput.value = type;
                         const isExpense = type === 'expense';
                         expenseBtn.classList.toggle('bg-[var(--primary)]', isExpense);
                         expenseBtn.classList.toggle('text-[var(--primary-foreground)]', isExpense);
                         incomeBtn.classList.toggle('bg-[var(--primary)]', !isExpense);
                         incomeBtn.classList.toggle('text-[var(--primary-foreground)]', !isExpense);
-                        this.populateCategoryOptions(type);
+                        this.populateCategoryOptions(type, selectedCategoryId);
                     };
 
                     expenseBtn.onclick = () => setType('expense');
                     incomeBtn.onclick = () => setType('income');
                     
-                    // Use local timezone date (en-CA -> YYYY-MM-DD) instead of UTC to prevent midnight date shifts
-                    modal.querySelector('#transaction-date').value = new Date().toLocaleDateString('en-CA');
-                    modal.querySelector('#transaction-time').value = this.getCurrentTime();
-                    setType('expense');
+                    modal.querySelector('#transaction-date').value = existingTxn
+                        ? existingTxn.date
+                        : new Date().toLocaleDateString('en-CA');
+                    modal.querySelector('#transaction-time').value = (existingTxn && existingTxn.time)
+                        ? existingTxn.time
+                        : this.getCurrentTime();
+
+                    setType(
+                        existingTxn ? existingTxn.type : 'expense',
+                        existingTxn ? existingTxn.categoryId : null
+                    );
                     
                     modal.querySelector('#close-transaction-modal-btn').onclick = () => this.hideModal(modal);
                     form.onsubmit = (e) => this.handleTransactionSubmit(e);
+
+                    if (existingTxn) {
+                        modal.querySelector('#modal-delete-txn-btn').onclick = () => {
+                            this.hideModal(modal);
+                            this.deleteTransaction(existingTxn.id);
+                        };
+                    }
+
                     this.showModal(modal);
                 },
                 
-                populateCategoryOptions(type) {
+                populateCategoryOptions(type, selectedCategoryId = null) {
                     const select = document.getElementById('transaction-category');
                     const categories = this.state.categories.filter(c => c.type === type);
-                    select.innerHTML = categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                    select.innerHTML = categories.map(c =>
+                        `<option value="${c.id}" ${c.id === selectedCategoryId ? 'selected' : ''}>${c.icon} ${c.name}</option>`
+                    ).join('');
                 },
 
                 /**
-                 * Validates and persists a new transaction with realtime date and clock metadata.
+                 * Creates a new transaction or updates an existing record when transaction-id is present.
                  *
                  * @param {SubmitEvent} submitEvent - Form submission event.
                  */
                 handleTransactionSubmit(submitEvent) {
                     submitEvent.preventDefault();
                     const form = submitEvent.target;
+                    const existingId = form.querySelector('#transaction-id').value;
                     const timeInput = form.querySelector('#transaction-time');
                     const recordedTime = (timeInput && timeInput.value) ? timeInput.value : this.getCurrentTime();
 
-                    const newTransaction = {
-                        id: this.generateId('txn'),
+                    const transactionPayload = {
+                        id: existingId || this.generateId('txn'),
                         type: form.querySelector('#transaction-type').value,
                         amount: parseInt(form.querySelector('#transaction-amount').value, 10),
                         categoryId: form.querySelector('#transaction-category').value,
@@ -529,11 +579,18 @@
                         description: form.querySelector('#transaction-description').value.trim()
                     };
 
-                    if (!newTransaction.amount || !newTransaction.description) return;
+                    if (!transactionPayload.amount || !transactionPayload.description) return;
 
-                    this.state.transactions.push(newTransaction);
+                    if (existingId) {
+                        const targetIndex = this.state.transactions.findIndex(txn => txn.id === existingId);
+                        if (targetIndex !== -1) {
+                            this.state.transactions[targetIndex] = transactionPayload;
+                        }
+                    } else {
+                        this.state.transactions.push(transactionPayload);
+                    }
+
                     this.saveState();
-                    
                     this.hideModal(this.elements.transactionModal);
                     this.navigateTo(this.state.activePage);
                 },
@@ -840,13 +897,6 @@
                     }
                 },
 
-                /**
-                 * Sends monthly expense data to the Vercel serverless proxy for AI analysis.
-                 *
-                 * @param {string} prompt - Formatted financial analysis prompt.
-                 * @returns {Promise<string>} HTML-formatted financial insights.
-                 * @throws {Error} When network request fails or proxy returns an error status.
-                 */
                 async callGemini(prompt) {
                     const proxyEndpoint = 'https://dompetsaya-api.vercel.app/api/gemini';
 
@@ -895,7 +945,6 @@
                         return;
                     }
                     
-                    // Include date, timestamp, and category so AI distinguishes separate purchase occasions
                     const transactionList = expensesThisMonth.map((txn) => {
                         const category = this.state.categories.find(cat => cat.id === txn.categoryId) || { name: 'Lainnya' };
                         const timestampLabel = txn.time
