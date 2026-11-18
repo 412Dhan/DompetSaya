@@ -45,7 +45,7 @@ module.exports = async function handler(request, response) {
             return response.status(400).json({ error: 'Invalid request: prompt is required.' });
         }
 
-        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
+        const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiApiKey}`;
         const geminiResponse = await fetch(geminiEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
