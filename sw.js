@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dompet-pro-cache-v2';
+const CACHE_NAME = 'dompet-pro-cache-v3';
 
 // Use relative paths so caching works accurately under GitHub Pages subpaths (/DompetSaya/)
 const urlsToCache = [
